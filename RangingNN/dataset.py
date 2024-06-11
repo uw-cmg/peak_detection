@@ -243,17 +243,18 @@ class BaseDataset(Dataset):
         if sp.ndim == 1:
             sp = sp[..., None]
         if sp.shape[0] > sp.shape[1]:
-            sz0 = sp.shape[0]
-        else:
-            # set default shape (N, 1) in case the spectrums are saved as (1,N)
+            # set default shape (1, N) in case the spectrums are saved as (N,1)
+            # so the first dimension is one channel
             sp = sp.T
-            sz0 = sp.shape[0]
+            sz0 = sp.shape[1]
+        else:
+            sz0 = sp.shape[1]
 
         if not (sz0 == self.spectrumsz):  # resize if different m/c binning is required
 
-            sp = rescale(sp, self.spectrumsz / sz0)
+            sp = rescale(sp, (1, self.spectrumsz / sz0)) # keep the channel dimention not rescaled
 
-        return sp, sz0, sp.shape[0]
+        return torch.tensor(sp), sz0, sp.shape[0]
 
     def get_labels(self):
         """Returns dictionary of labels for training."""
@@ -282,8 +283,9 @@ class BaseDataset(Dataset):
                             {
                                 "file": file,
                                 "dataset_key": k,
-                                "cls": np.zeros(single[:, 0:1].shape),  # 0 is single class
-                                "bboxes": single,  # n, 2
+                                "batch_idx": torch.zeros((1, single.shape[0])),  # number of instance zeros
+                                "cls": torch.zeros(single[:, 0:1].shape),  # 0 is single class
+                                "bboxes": torch.tensor(single),  # n, 2
                                 "normalized": True,
                                 "bbox_format": "center_width",
                             }
@@ -337,16 +339,20 @@ class BaseDataset(Dataset):
         """Collates data samples into batches."""
         new_batch = {}
         keys = batch[0].keys()
-        values = list(zip(*[list(b.values()) for b in batch]))
+        values = list(zip(*[list(b.values()) for b in batch]))  # key list, batch tuple
+        ######################################################
+        # Concat the specturm and labels from the whole batch together
         for i, k in enumerate(keys):
             value = values[i]
-            if k == "input":
+            if k == "spectrum":
                 value = torch.stack(value, 0)
-            if k in {"bboxes", "cls"}:
+            if k in {"bboxes", "cls", }:
                 value = torch.cat(value, 0)
+            # if not those and it is batch_idx
             new_batch[k] = value
+        #######################################################
         new_batch["batch_idx"] = list(new_batch["batch_idx"])
         for i in range(len(new_batch["batch_idx"])):
             new_batch["batch_idx"][i] += i  # add target image index for build_targets()
-        new_batch["batch_idx"] = torch.cat(new_batch["batch_idx"], 0)
+        new_batch["batch_idx"] = torch.cat(new_batch["batch_idx"], 1)
         return new_batch

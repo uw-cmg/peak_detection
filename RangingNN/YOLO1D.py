@@ -49,8 +49,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         if verbose:
             LOGGER.info(f"{'activation:'} {act}")  # print
 
-    if verbose:
-        LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<45}{'arguments':<30}")
     ch = [ch]
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args
@@ -124,7 +122,8 @@ class DetectionModel(BaseModel):
             m.inplace = self.inplace
             forward = lambda x: self.forward(x)
             # (1, ch, s, s) changed to (1, ch, s)
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s))])  # forward
+            m.stride = torch.tensor([s / x.shape[-1] for x in forward(torch.zeros(1, ch, s))])  # forward changed to -1
+
             self.stride = m.stride
             m.bias_init()  # only run once
         else:
@@ -132,23 +131,6 @@ class DetectionModel(BaseModel):
 
         # Init weights, biases
         initialize_weights(self)
-        # if verbose:
-        #     self.info()
-        #     LOGGER.info("")
-
-    # def _predict_augment(self, x):
-    #     """Perform augmentations on input image x and return augmented inference and train outputs."""
-    #     img_size = x.shape[-2:]  # height, width
-    #     s = [1, 0.83, 0.67]  # scales
-    #     f = [None, 3, None]  # flips (2-ud, 3-lr)
-    #     y = []  # outputs
-    #     for si, fi in zip(s, f):
-    #         xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-    #         yi = super().predict(xi)[0]  # forward
-    #         yi = self._descale_pred(yi, fi, si, img_size)
-    #         y.append(yi)
-    #     y = self._clip_augmented(y)  # clip augmented tails
-    #     return torch.cat(y, -1), None  # augmented inference, train
 
     @staticmethod
     def _descale_pred(p, flips, scale, img_size, dim=1):

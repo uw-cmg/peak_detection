@@ -5,10 +5,10 @@ import numpy as np
 import torch
 import contextlib
 
-from peak_detection.RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER
+from peak_detection.RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER, IterableSimpleNamespace
 from peak_detection.RangingNN import callbacks
-from peak_detection.RangingNN.model_utils import non_max_suppression
-
+from peak_detection.RangingNN.model_utils import non_max_suppression, cw2lh, scale_boxes, lh2cw
+from peak_detection.RangingNN.metrics import box_iou, DetMetrics
 
 
 class Profile(contextlib.ContextDecorator):
@@ -99,7 +99,7 @@ class BaseValidator:
             args (SimpleNamespace): Configuration for the validator.
             _callbacks (dict): Dictionary to store various callback functions.
         """
-        self.args = get_cfg(args)
+        self.args = args if isinstance(args, IterableSimpleNamespace) else get_cfg(args)
         self.dataloader = dataloader
         self.pbar = pbar
         self.stride = None
@@ -110,6 +110,7 @@ class BaseValidator:
         self.names = None
         self.seen = None
         self.stats = None
+        self.class_map = None
         self.confusion_matrix = None
         self.nc = None
         self.iouv = None
@@ -119,10 +120,11 @@ class BaseValidator:
         (self.save_dir / "labels" if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
         if self.args.conf is None:
             self.args.conf = 0.001  # default conf=0.001
-        self.args.imgsz = check_imgsz(self.args.imgsz, max_dim=1)
-
+        self.args.spectrumsz = check_imgsz(self.args.spectrumsz, max_dim=1)
+        self.nt_per_class = None
         self.plots = {}
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
+        self.metrics = DetMetrics(save_dir=self.save_dir)
 
     @torch.inference_mode()
     def __call__(self, trainer=None, model=None):
@@ -172,13 +174,12 @@ class BaseValidator:
                 preds = self.postprocess(preds)
 
             self.update_metrics(preds, batch)
-            if self.args.plots and batch_i < 3:
-                self.plot_val_samples(batch, batch_i)
-                self.plot_predictions(batch, preds, batch_i)
+            # if self.args.plots and batch_i < 3:
+            #     self.plot_val_samples(batch, batch_i)
+            #     self.plot_predictions(batch, preds, batch_i)
 
             self.run_callbacks("on_val_batch_end")
         stats = self.get_stats()
-        self.check_stats(stats)
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
         self.finalize_metrics()
         self.print_results()
@@ -196,7 +197,7 @@ class BaseValidator:
                 with open(str(self.save_dir / "predictions.json"), "w") as f:
                     LOGGER.info(f"Saving {f.name}...")
                     json.dump(self.jdict, f)  # flatten and save
-                stats = self.eval_json(stats)  # update stats
+                # stats = self.eval_json(stats)  # update stats
             if self.args.plots or self.args.save_json:
                 LOGGER.info(f"Results saved to {self.save_dir}")
             return stats
@@ -209,10 +210,12 @@ class BaseValidator:
         self.nc = len(model.names)
         self.metrics.names = self.names
         self.metrics.plot = self.args.plots
-        # self.confusion_matrix = ConfusionMatrix(nc=self.nc, conf=self.args.conf) # skip this for now TODO
+        # self.confusion_matrix = ConfusionMatrix(nc=self.nc, conf=self.args.conf)
         self.seen = 0
         self.jdict = []
         self.stats = dict(tp=[], conf=[], pred_cls=[], target_cls=[])
+        self.iouv = torch.linspace(0.5, 0.95, 10)  # IoU vector for mAP@0.5:0.95
+        self.niou = self.iouv.numel()
 
     def postprocess(self, preds):
         """Apply Non-maximum suppression to prediction outputs."""
@@ -220,7 +223,6 @@ class BaseValidator:
             preds,
             self.args.conf,
             self.args.iou,
-            labels=[], # not involving ground truth labels
             multi_label=True,
             agnostic=self.args.single_cls,
             max_det=self.args.max_det,
@@ -236,7 +238,7 @@ class BaseValidator:
                 pred_cls=torch.zeros(0, device=self.device),
                 tp=torch.zeros(npr, self.niou, dtype=torch.bool, device=self.device),
             )
-            pbatch = self._prepare_batch(si, batch)
+            pbatch = self._prepare_batch(si, batch) # scaled to
             cls, bbox = pbatch.pop("cls"), pbatch.pop("bbox")
             nl = len(cls)
             stat["target_cls"] = cls
@@ -244,31 +246,52 @@ class BaseValidator:
                 if nl:
                     for k in self.stats.keys():
                         self.stats[k].append(stat[k])
-                    if self.args.plots:
-                        self.confusion_matrix.process_batch(detections=None, gt_bboxes=bbox, gt_cls=cls)
+                    # if self.args.plots:
+                    #     self.confusion_matrix.process_batch(detections=None, gt_bboxes=bbox, gt_cls=cls)
                 continue
 
             # Predictions
             if self.args.single_cls:
-                pred[:, 5] = 0
+                pred[:, 3] = 0  # confidence then class
             predn = self._prepare_pred(pred, pbatch)
-            stat["conf"] = predn[:, 4]
-            stat["pred_cls"] = predn[:, 5]
+            stat["conf"] = predn[:, 2]
+            stat["pred_cls"] = predn[:, 3]
 
             # Evaluate
             if nl:
                 stat["tp"] = self._process_batch(predn, bbox, cls)
-                if self.args.plots:
-                    self.confusion_matrix.process_batch(predn, bbox, cls)
+                # if self.args.plots:
+                #     self.confusion_matrix.process_batch(predn, bbox, cls)
             for k in self.stats.keys():
                 self.stats[k].append(stat[k])
 
             # Save
             if self.args.save_json:
                 self.pred_to_json(predn, batch["im_file"][si])
-            if self.args.save_txt:
-                file = self.save_dir / "labels" / f'{Path(batch["im_file"][si]).stem}.txt'
-                self.save_one_txt(predn, self.args.save_conf, pbatch["ori_shape"], file)
+
+    def _prepare_batch(self, si, batch):
+        """Prepares a batch of images and annotations for validation."""
+        idx = batch["batch_idx"] == si
+        cls = batch["cls"][idx].squeeze(-1)
+        bbox = batch["bboxes"][idx]
+        ori_shape = batch["ori_shape"][si]
+        spectrumsz = batch["resized_shape"]
+        ratio_pad = batch["ratio_pad"][si]
+        if len(cls):
+            bbox = cw2lh(bbox) * torch.tensor(spectrumsz, device=self.device) # target ranges denormalized, in pixels
+            scale_boxes(bbox, ratio_pad, spectrumsz)  # native-space labels
+        return {"cls": cls, "bbox": bbox, "ori_shape": ori_shape, "spectrumsz": spectrumsz, "ratio_pad": ratio_pad}
+
+    def _prepare_pred(self, pred, pbatch):
+        """Prepares a batch of images and annotations for validation."""
+        # predn = pred.clone()
+        # ops.scale_boxes(
+        #     pbatch["imgsz"], predn[:, :4], pbatch["ori_shape"], ratio_pad=pbatch["ratio_pad"]
+        # )  # native-space pred
+        predn = pred * torch.tensor(pbatch['spectrumsz'])
+        # TODO i think I've matched the pred and processed label, i.e. denormalized and resize considered
+        # I assume the model predictions are center-width normalized. Change here if it's not.
+        return predn
 
     def match_predictions(self, pred_classes, true_classes, iou, use_scipy=False):
         """
@@ -312,19 +335,69 @@ class BaseValidator:
                     correct[matches[:, 1].astype(int), i] = True
         return torch.tensor(correct, dtype=torch.bool, device=pred_classes.device)
 
-    def add_callback(self, event: str, callback):
-        """Appends the given callback."""
-        self.callbacks[event].append(callback)
+    def _process_batch(self, detections, gt_bboxes, gt_cls):
+        """
+        Return correct prediction matrix.
+
+        Args:
+            detections (torch.Tensor): Tensor of shape [N, 4] representing detections.
+                Each detection is of the format: low, high, conf, class.
+            labels (torch.Tensor): Tensor of shape [M, 3] representing labels.
+                Each label is of the format: class, low, high
+
+        Returns:
+            (torch.Tensor): Correct prediction matrix of shape [N, 10] for 10 IoU levels.
+        """
+        iou = box_iou(gt_bboxes, detections[:, :2])
+        return self.match_predictions(detections[:, 3], gt_cls, iou)
 
     def run_callbacks(self, event: str):
         """Runs all callbacks associated with a specified event."""
         for callback in self.callbacks.get(event, []):
             callback(self)
 
-    def get_dataloader(self, dataset_path, batch_size):
-        """Get data loader from dataset path and batch size."""
-        raise NotImplementedError("get_dataloader function not implemented for this validator")
-
     def preprocess(self, batch):
         """Preprocesses an input batch."""
         return batch
+
+    def pred_to_json(self, predn, filename):
+        """Serialize YOLO predictions to COCO json format."""
+        stem = Path(filename).stem
+        image_id = int(stem) if stem.isnumeric() else stem
+        box = lh2cw(predn[:, :2])
+        # box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
+        for p, b in zip(predn.tolist(), box.tolist()):
+            self.jdict.append(
+                {
+                    "image_id": image_id,
+                    "category_id": self.class_map[int(p[3])],  # index starts from 1 if it's lvis
+                    "bbox": [round(x, 3) for x in b],
+                    "score": round(p[2], 5),
+                }
+            )
+
+    def get_stats(self):
+        """Returns metrics statistics and results dictionary."""
+        stats = {k: torch.cat(v, 0).cpu().numpy() for k, v in self.stats.items()}  # to numpy
+        if len(stats) and stats["tp"].any():
+            self.metrics.process(**stats)
+        self.nt_per_class = np.bincount(
+            stats["target_cls"].astype(int), minlength=self.nc
+        )  # number of targets per class
+        return self.metrics.results_dict
+
+    def finalize_metrics(self, *args, **kwargs):
+        """Set final values for metrics speed and confusion matrix."""
+        self.metrics.speed = self.speed
+
+    def print_results(self):
+        """Prints training/validation set metrics per class."""
+        pf = "%22s" + "%11i" * 2 + "%11.3g" * len(self.metrics.keys)  # print format
+        LOGGER.info(pf % ("all", self.seen, self.nt_per_class.sum(), *self.metrics.mean_results()))
+        if self.nt_per_class.sum() == 0:
+            LOGGER.warning(f"WARNING ⚠ no labels found in {self.args.task} set, can not compute metrics without labels")
+
+        # Print results per class
+        if self.args.verbose and not self.training and self.nc > 1 and len(self.stats):
+            for i, c in enumerate(self.metrics.ap_class_index):
+                LOGGER.info(pf % (self.names[c], self.seen, self.nt_per_class[c], *self.metrics.class_result(i)))

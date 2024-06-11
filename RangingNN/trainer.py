@@ -1,11 +1,10 @@
 import gc
 import math
 import os
-import subprocess
 import time
 import warnings
 from copy import deepcopy, copy
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +21,7 @@ from peak_detection.RangingNN.utils import strip_optimizer, check_imgsz, get_cfg
 from peak_detection.RangingNN import callbacks
 from peak_detection.RangingNN.dataset import BaseDataset, build_dataloader
 from peak_detection.RangingNN.YOLO1D import DetectionModel
-
+from peak_detection.RangingNN.validator import BaseValidator
 
 # PyTorch Multi-GPU DDP Constants
 RANK = int(os.getenv("RANK", -1))
@@ -213,7 +212,7 @@ class BaseTrainer:
         csv (Path): Path to results CSV file.
     """
 
-    def __init__(self, cfg: Dict, overrides=None, _callbacks=None):
+    def __init__(self, cfg: Dict, _callbacks=None):
         """
         Initializes the BaseTrainer class.
 
@@ -222,7 +221,7 @@ class BaseTrainer:
             refer to https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
             overrides (dict, optional): Configuration overrides. Defaults to None.
         """
-        self.args = get_cfg(cfg, overrides)
+        self.args = get_cfg(cfg)
         # self.check_resume(overrides)
         self.device = select_device(self.args.device, self.args.batch)
         self.validator = None
@@ -231,8 +230,7 @@ class BaseTrainer:
         init_seeds(self.args.seed + 1 + RANK, deterministic=self.args.deterministic)
 
         # Dirs
-        self.save_dir = self.args.save_dir
-        self.args.name = self.save_dir.name  # update name for loggers
+        self.save_dir = Path(self.args.save_dir)
         self.wdir = self.save_dir / "weights"  # weights dir
         if RANK in {-1, 0}:
             self.wdir.mkdir(parents=True, exist_ok=True)  # make dir
@@ -255,7 +253,8 @@ class BaseTrainer:
         # self.model = check_model_file_from_stem(self.args.model)  # add suffix, i.e. yolov8n -> yolov8n.pt
         self.model = self.args.model
 
-        self.data = {"train": self.args.data+'/train', "test": self.args.data + '/test'}
+        self.data = {"train": self.args.data + '/train', "test": self.args.data + '/test', "nc": 1,
+                     'names': ['base_peak']}
         self.trainset, self.testset = self.data["train"], self.data["test"]
 
         self.ema = None
@@ -314,7 +313,7 @@ class BaseTrainer:
         self.model = self.get_model(cfg=self.model, weights=None, verbose=RANK == -1)  # calls Model(cfg, weights)
 
         self.model = self.model.to(self.device)
-        # set_model_attributes
+        self.set_model_attributes()
         self.model.nc = self.data["nc"]  # attach number of classes to model
         self.model.names = self.data["names"]  # attach class names to model
         self.model.args = self.args  # attach hyperparameters to model
@@ -337,12 +336,13 @@ class BaseTrainer:
             elif not v.requires_grad and v.dtype.is_floating_point:  # only floating point Tensor can require gradients
                 v.requires_grad = True
 
-        self.amp = False # automatic mixed precision training for speeding up and save memory
+        self.amp = False  # automatic mixed precision training for speeding up and save memory
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp)
 
         # Check imgsz
-        gs = max(int(self.model.stride.max() if hasattr(self.model, "stride") else 1536), 1536)  # grid size (max stride), ~1/20 of input data size
-        self.args.imgsz = check_imgsz(self.args.imgsz, stride=gs, floor=gs, max_dim=1)
+        gs = max(int(self.model.stride.max() if hasattr(self.model, "stride") else 1536),
+                 1536)  # grid size (max stride), ~1/20 of input data size
+        self.args.spectrumsz = check_imgsz(self.args.spectrumsz, stride=gs, floor=gs, max_dim=1)
         self.stride = gs  # for multiscale training
 
         # Dataloaders
@@ -359,7 +359,8 @@ class BaseTrainer:
             self.ema = ModelEMA(self.model)
 
         # Optimizer
-        self.accumulate = max(round(self.args.nbs / self.batch_size), 1)  # accumulate loss before optimizing,  # nbs nominal batch size
+        self.accumulate = max(round(self.args.nbs / self.batch_size),
+                              1)  # accumulate loss before optimizing,  # nbs nominal batch size
         weight_decay = self.args.weight_decay * self.batch_size * self.accumulate / self.args.nbs  # scale weight_decay
         iterations = math.ceil(len(self.train_loader.dataset) / max(self.batch_size, self.args.nbs)) * self.epochs
         self.optimizer = self.build_optimizer(
@@ -391,7 +392,7 @@ class BaseTrainer:
         self.train_time_start = time.time()
         self.run_callbacks("on_train_start")
         LOGGER.info(
-            f'Image sizes {self.args.imgsz} train, {self.args.imgsz} val\n'
+            f'Image sizes {self.args.spectrumsz} train, {self.args.spectrumsz} val\n'
             f'Using {self.train_loader.num_workers * (world_size or 1)} dataloader workers\n'
             f"Logging results to {self.save_dir}\n"
             f'Starting training for ' + (f"{self.args.time} hours..." if self.args.time else f"{self.epochs} epochs...")
@@ -464,11 +465,11 @@ class BaseTrainer:
                 if RANK in {-1, 0}:
                     pbar.set_description(
                         ("%11s" * 2 + "%11.4g" * (2 + loss_len))
-                        % (f"{epoch + 1}/{self.epochs}", mem, *losses, batch["cls"].shape[0], batch["img"].shape[-1])
+                        % (f"{epoch + 1}/{self.epochs}", mem, *losses, batch["cls"].shape[0], batch["spectrum"].shape[-1])
                     )
                     self.run_callbacks("on_batch_end")
-                    if self.args.plots and ni in self.plot_idx:
-                        self.plot_training_samples(batch, ni)
+                    # if self.args.plots and ni in self.plot_idx:
+                    #     self.plot_training_samples(batch, ni)
 
                 self.run_callbacks("on_train_batch_end")
 
@@ -536,7 +537,7 @@ class BaseTrainer:
             {
                 "epoch": self.epoch,
                 "best_fitness": self.best_fitness,
-                "model": None,  # resume and final checkpoints derive from EMA
+                "model": self.model,
                 "ema": deepcopy(self.ema.ema).half(),
                 "updates": self.ema.updates,
                 "optimizer": convert_optimizer_state_dict_to_fp16(deepcopy(self.optimizer.state_dict())),
@@ -574,7 +575,7 @@ class BaseTrainer:
         workers = self.args.workers if mode == "train" else self.args.workers * 2
         return build_dataloader(dataset, batch_size, workers, shuffle, rank)  # return dataloader
 
-    def get_model(self, cfg=None, weights=None, verbose=True):
+    def get_model(self, cfg, weights=None, verbose=True):
         """Return a YOLO detection model."""
         model = DetectionModel(cfg, nc=self.data["nc"], verbose=verbose and RANK == -1)
         if weights:
@@ -620,8 +621,14 @@ class BaseTrainer:
         pass
 
     def progress_string(self):
-        """Returns a string describing training progress."""
-        return ""
+        """Returns a formatted string of training progress with epoch, GPU memory, loss, instances and size."""
+        return ("\n" + "%11s" * (4 + len(self.loss_names))) % (
+            "Epoch",
+            "GPU_mem",
+            *self.loss_names,
+            "Instances",
+            "Size",
+        )
 
     def save_metrics(self, metrics):
         """Saves training metrics to a CSV file."""
@@ -714,6 +721,3 @@ class BaseTrainer:
             f'{len(g[1])} weight(decay=0.0), {len(g[0])} weight(decay={decay}), {len(g[2])} bias(decay=0.0)'
         )
         return optimizer
-
-
-

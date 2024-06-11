@@ -4,74 +4,22 @@ import torch.nn.functional as F
 import math
 import numpy as np
 
-
-def bbox2dist(anchor_points, bbox, reg_max):
-    """Transform bbox(xyxy) to dist(ltrb)."""
-    x1y1, x2y2 = bbox.chunk(2, -1)
-    return torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01)  # dist (lt, rb)
+from peak_detection.RangingNN.model_utils import lh2cw, cw2lh
+from peak_detection.RangingNN.model_utils import make_anchors
 
 
-def dist2bbox(distance, anchor_points, xywh=True, dim=-1):
-    """Transform distance(ltrb) to box(xywh or xyxy)."""
-    lt, rb = distance.chunk(2, dim)
-    x1y1 = anchor_points - lt
-    x2y2 = anchor_points + rb
-    if xywh:
-        c_xy = (x1y1 + x2y2) / 2
-        wh = x2y2 - x1y1
-        return torch.cat((c_xy, wh), dim)  # xywh bbox
-    return torch.cat((x1y1, x2y2), dim)  # xyxy bbox
-
-
-def make_anchors(feats, strides, grid_cell_offset=0.5):
-    """Generate anchors from features."""
-    anchor_points, stride_tensor = [], []
-    assert feats is not None
-    dtype, device = feats[0].dtype, feats[0].device
-    for i, stride in enumerate(strides):
-        _, _, h, w = feats[i].shape
-        sx = torch.arange(end=w, device=device, dtype=dtype) + grid_cell_offset  # shift x
-        sy = torch.arange(end=h, device=device, dtype=dtype) + grid_cell_offset  # shift y
-        sy, sx = torch.meshgrid(sy, sx)
-        anchor_points.append(torch.stack((sx, sy), -1).view(-1, 2))
-        stride_tensor.append(torch.full((h * w, 1), stride, dtype=dtype, device=device))
-    return torch.cat(anchor_points), torch.cat(stride_tensor)
-
-
-def xywh2xyxy(x):
+def bbox_iou(box1, box2, cw=True, GIoU=False, DIoU=False, eps=1e-7):
     """
-    Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the
-    top-left corner and (x2, y2) is the bottom-right corner.
+    different from box_iou()
+    Calculate Intersection over Union (IoU) of box1(1, 2) to box2(n, 2).
 
     Args:
-        x (np.ndarray | torch.Tensor): The input bounding box coordinates in (x, y, width, height) format.
-
-    Returns:
-        y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
-    """
-    assert x.shape[-1] == 4, f"input shape last dimension expected 4 but input shape is {x.shape}"
-    y = torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)  # faster than clone/copy
-    dw = x[..., 2] / 2  # half-width
-    dh = x[..., 3] / 2  # half-height
-    y[..., 0] = x[..., 0] - dw  # top left x
-    y[..., 1] = x[..., 1] - dh  # top left y
-    y[..., 2] = x[..., 0] + dw  # bottom right x
-    y[..., 3] = x[..., 1] + dh  # bottom right y
-    return y
-
-
-def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
-    """
-    Calculate Intersection over Union (IoU) of box1(1, 4) to box2(n, 4).
-
-    Args:
-        box1 (torch.Tensor): A tensor representing a single bounding box with shape (1, 4).
-        box2 (torch.Tensor): A tensor representing n bounding boxes with shape (n, 4).
-        xywh (bool, optional): If True, input boxes are in (x, y, w, h) format. If False, input boxes are in
-                               (x1, y1, x2, y2) format. Defaults to True.
+        box1 (torch.Tensor): A tensor representing a single bounding box with shape (1, 2).
+        box2 (torch.Tensor): A tensor representing n bounding boxes with shape (n, 2).
+        cw (bool, optional): If True, input boxes are in (c, w) format. If False, input boxes are in
+                               (low, high) format. Defaults to True.
         GIoU (bool, optional): If True, calculate Generalized IoU. Defaults to False.
         DIoU (bool, optional): If True, calculate Distance IoU. Defaults to False.
-        CIoU (bool, optional): If True, calculate Complete IoU. Defaults to False.
         eps (float, optional): A small value to avoid division by zero. Defaults to 1e-7.
 
     Returns:
@@ -79,43 +27,29 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
     """
 
     # Get the coordinates of bounding boxes
-    if xywh:  # transform from xywh to xyxy
-        (x1, y1, w1, h1), (x2, y2, w2, h2) = box1.chunk(4, -1), box2.chunk(4, -1)
-        w1_, h1_, w2_, h2_ = w1 / 2, h1 / 2, w2 / 2, h2 / 2
-        b1_x1, b1_x2, b1_y1, b1_y2 = x1 - w1_, x1 + w1_, y1 - h1_, y1 + h1_
-        b2_x1, b2_x2, b2_y1, b2_y2 = x2 - w2_, x2 + w2_, y2 - h2_, y2 + h2_
+    if cw:  # transform from xywh to xyxy
+        (c1, w1), (c2, w2) = box1.chunk(2, -1), box2.chunk(2, -1)
+        (b1_l, b1_h), (b2_l, b2_h) = cw2lh(box1).chunk(2, -1),  cw2lh(box2).chunk(2, -1)
+
     else:  # x1, y1, x2, y2 = box1
-        b1_x1, b1_y1, b1_x2, b1_y2 = box1.chunk(4, -1)
-        b2_x1, b2_y1, b2_x2, b2_y2 = box2.chunk(4, -1)
-        w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
-        w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
+        (b1_l, b1_h), (b2_l, b2_h) = box1.chunk(2, -1), box2.chunk(2, -1)
+        (c1, w1), (c2, w2) = lh2cw(box1).chunk(2, -1),  lh2cw(box2).chunk(2, -1)
 
     # Intersection area
-    inter = (b1_x2.minimum(b2_x2) - b1_x1.maximum(b2_x1)).clamp_(0) * (
-            b1_y2.minimum(b2_y2) - b1_y1.maximum(b2_y1)
-    ).clamp_(0)
+    inter = (b1_h.minimum(b2_h) - b1_l.maximum(b2_l)).clamp_(0)
 
     # Union Area
-    union = w1 * h1 + w2 * h2 - inter + eps
+    union = w1 + w2 - inter + eps
 
     # IoU
     iou = inter / union
-    if CIoU or DIoU or GIoU:
-        cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
-        ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
-        if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
-            c2 = cw.pow(2) + ch.pow(2) + eps  # convex diagonal squared
-            rho2 = (
-                           (b2_x1 + b2_x2 - b1_x1 - b1_x2).pow(2) + (b2_y1 + b2_y2 - b1_y1 - b1_y2).pow(2)
-                   ) / 4  # center dist**2
-            if CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
-                v = (4 / math.pi**2) * ((w2 / h2).atan() - (w1 / h1).atan()).pow(2)
-                with torch.no_grad():
-                    alpha = v / (v - iou + (1 + eps))
-                return iou - (rho2 / c2 + v * alpha)  # CIoU
-            return iou - rho2 / c2  # DIoU
-        c_area = cw * ch + eps  # convex area
-        return iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+    if DIoU or GIoU:
+        cw = b1_h.maximum(b2_h) - b1_l.minimum(b2_l)  # convex (smallest enclosing box) width
+        dis = cw + eps  # convex diagonal distance
+        if DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
+            cdis = abs(c2 - c1)  # center distance
+            return iou - cdis / dis  # DIoU
+        return iou - (dis - union) / dis  # GIoU https://arxiv.org/pdf/1902.09630.pdf
     return iou  # IoU
 
 
@@ -131,7 +65,7 @@ class BboxLoss(nn.Module):
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], cw=False, DIoU=True)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
@@ -177,7 +111,7 @@ class TaskAlignedAssigner(nn.Module):
         eps (float): A small value to prevent division by zero.
     """
 
-    def __init__(self, topk=13, num_classes=80, alpha=1.0, beta=6.0, eps=1e-9):
+    def __init__(self, topk=13, num_classes=1, alpha=1.0, beta=6.0, eps=1e-9):
         """Initialize a TaskAlignedAssigner object with customizable hyperparameters."""
         super().__init__()
         self.topk = topk
@@ -195,10 +129,10 @@ class TaskAlignedAssigner(nn.Module):
 
         Args:
             pd_scores (Tensor): shape(bs, num_total_anchors, num_classes)
-            pd_bboxes (Tensor): shape(bs, num_total_anchors, 4)
-            anc_points (Tensor): shape(num_total_anchors, 2)
+            pd_bboxes (Tensor): shape(bs, num_total_anchors, 2)
+            anc_points (Tensor): shape(num_total_anchors, 1)
             gt_labels (Tensor): shape(bs, n_max_boxes, 1)
-            gt_bboxes (Tensor): shape(bs, n_max_boxes, 4)
+            gt_bboxes (Tensor): shape(bs, n_max_boxes, 2)
             mask_gt (Tensor): shape(bs, n_max_boxes, 1)
 
         Returns:
@@ -274,7 +208,7 @@ class TaskAlignedAssigner(nn.Module):
 
     def iou_calculation(self, gt_bboxes, pd_bboxes):
         """IoU calculation for horizontal bounding boxes."""
-        return bbox_iou(gt_bboxes, pd_bboxes, xywh=False, CIoU=True).squeeze(-1).clamp_(0)
+        return bbox_iou(gt_bboxes, pd_bboxes, cw=False, DIoU=True).squeeze(-1).clamp_(0)
 
     def select_topk_candidates(self, metrics, largest=True, topk_mask=None):
         """
@@ -365,7 +299,7 @@ class TaskAlignedAssigner(nn.Module):
     def select_candidates_in_gts(xy_centers, gt_bboxes, eps=1e-9):
         """
         Select the positive anchor center in gt.
-
+        Didn't change the var names carefully
         Args:
             xy_centers (Tensor): shape(h*w, 2)
             gt_bboxes (Tensor): shape(b, n_boxes, 4)
@@ -375,7 +309,7 @@ class TaskAlignedAssigner(nn.Module):
         """
         n_anchors = xy_centers.shape[0]
         bs, n_boxes, _ = gt_bboxes.shape
-        lt, rb = gt_bboxes.view(-1, 1, 4).chunk(2, 2)  # left-top, right-bottom
+        lt, rb = gt_bboxes.view(-1, 1, 2).chunk(2, 2)  # left-top, right-bottom
         bbox_deltas = torch.cat((xy_centers[None] - lt, rb - xy_centers[None]), dim=2).view(bs, n_boxes, n_anchors, -1)
         # return (bbox_deltas.min(3)[0] > eps).to(gt_bboxes.dtype)
         return bbox_deltas.amin(3).gt_(eps)
@@ -423,7 +357,7 @@ class v8DetectionLoss:
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
-        self.no = m.nc + m.reg_max * 4
+        self.no = m.nc + m.reg_max * 2  # 4 changed to 2
         self.reg_max = m.reg_max
         self.device = device
 
@@ -434,56 +368,58 @@ class v8DetectionLoss:
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
 
     def preprocess(self, targets, batch_size, scale_tensor):
-        """Preprocesses the target counts and matches with the input batch size to output a tensor."""
+        """
+        preprocess the target so that they are denormalized and in xyxy format
+        Preprocesses the target counts and matches with the input batch size to output a tensor.
+        (because each image can have different number of instance)
+        out shape: [num_images, max_num_instance_per_image, ...]
+        """
         if targets.shape[0] == 0:
-            out = torch.zeros(batch_size, 0, 5, device=self.device)
+            out = torch.zeros(batch_size, 0, 3, device=self.device)
         else:
             i = targets[:, 0]  # image index
             _, counts = i.unique(return_counts=True)
-            counts = counts.to(dtype=torch.int32)
-            out = torch.zeros(batch_size, counts.max(), 5, device=self.device)
+            counts = counts.to(dtype=torch.int32)  # the number of source images covered in this batch of instance
+            out = torch.zeros(batch_size, counts.max(), 3, device=self.device)
             for j in range(batch_size):
-                matches = i == j
+                matches = i == j  # bool array [N, 1]
                 n = matches.sum()
                 if n:
                     out[j, :n] = targets[matches, 1:]
-            out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor))
+            out[..., 1:3] = cw2lh(out[..., 1:3].mul_(scale_tensor))
         return out
 
     def bbox_decode(self, anchor_points, pred_dist):
         """Decode predicted object bounding box coordinates from anchor points and distribution."""
         if self.use_dfl:
             b, a, c = pred_dist.shape  # batch, anchors, channels
-            pred_dist = pred_dist.view(b, a, 4, c // 4).softmax(3).matmul(self.proj.type(pred_dist.dtype))
-            # pred_dist = pred_dist.view(b, a, c // 4, 4).transpose(2,3).softmax(3).matmul(self.proj.type(pred_dist.dtype))
-            # pred_dist = (pred_dist.view(b, a, c // 4, 4).softmax(2) * self.proj.type(pred_dist.dtype).view(1, 1, -1, 1)).sum(2)
-        return dist2bbox(pred_dist, anchor_points, xywh=False)
+            pred_dist = pred_dist.view(b, a, 2, c // 2).softmax(3).matmul(self.proj.type(pred_dist.dtype))
+        return dist2bbox(pred_dist, anchor_points, cw=False)
 
     def __call__(self, preds, batch):
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = preds[1] if isinstance(preds, tuple) else preds
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
-            (self.reg_max * 4, self.nc), 1
+            (self.reg_max * 2, self.nc), 1
         )
 
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
         dtype = pred_scores.dtype
-        batch_size = pred_scores.shape[0]
-        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
+        batch_size = pred_scores.shape[0]  # equals predefined batch size
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # spectrum size [spectrumsz]
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
 
         # Targets
         targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
-        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
-        gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[0, 0]]) # denormalized and xyxy
+        gt_labels, gt_bboxes = targets.split((1, 2), 2)  # cls,lh
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)  # the value for negative gt will be False
 
         # Pboxes
-        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
-
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 2)
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
             (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),

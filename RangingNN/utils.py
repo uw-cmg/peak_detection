@@ -36,6 +36,35 @@ CFG_BOOL_KEYS = {"save", "exist_ok", "verbose", "deterministic", "single_cls", "
                  }
 
 
+class SimpleClass:
+    """Ultralytics SimpleClass is a base class providing helpful string representation, error reporting, and attribute
+    access methods for easier debugging and usage.
+    """
+
+    def __str__(self):
+        """Return a human-readable string representation of the object."""
+        attr = []
+        for a in dir(self):
+            v = getattr(self, a)
+            if not callable(v) and not a.startswith("_"):
+                if isinstance(v, SimpleClass):
+                    # Display only the module and class name for subclasses
+                    s = f"{a}: {v.__module__}.{v.__class__.__name__} object"
+                else:
+                    s = f"{a}: {repr(v)}"
+                attr.append(s)
+        return f"{self.__module__}.{self.__class__.__name__} object with attributes:\n\n" + "\n".join(attr)
+
+    def __repr__(self):
+        """Return a machine-readable string representation of the object."""
+        return self.__str__()
+
+    def __getattr__(self, attr):
+        """Custom attribute access error message with helpful information."""
+        name = self.__class__.__name__
+        raise AttributeError(f"'{name}' object has no attribute '{attr}'. See valid attributes below.\n{self.__doc__}")
+
+
 class IterableSimpleNamespace(SimpleNamespace):
     """Ultralytics IterableSimpleNamespace is an extension class of SimpleNamespace that adds iterable functionality and
     enables usage with dict() and for loops.
@@ -54,10 +83,7 @@ class IterableSimpleNamespace(SimpleNamespace):
         name = self.__class__.__name__
         raise AttributeError(
             f"""
-            '{name}' object has no attribute '{attr}'. This may be caused by a modified or out of date ultralytics
-            'default.yaml' file.\nPlease update your code with 'pip install -U ultralytics' and if necessary replace
-            {DEFAULT_CFG_PATH} with the latest version from
-            https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
+            '{name}' object has no attribute '{attr}'.
             """
         )
 
@@ -67,39 +93,41 @@ class IterableSimpleNamespace(SimpleNamespace):
 
 
 def check_cfg(cfg, hard=True):
+    if isinstance(cfg, IterableSimpleNamespace):
+        pass
     """Check configuration argument types and values."""
-    for k, v in cfg.items():
-        if v is not None:  # None values may be from optional args
-            if k in CFG_FLOAT_KEYS and not isinstance(v, (int, float)):
+    for ki, vi in cfg.items():
+        if vi is not None:  # None values may be from optional args
+            if ki in CFG_FLOAT_KEYS and not isinstance(vi, (int, float)):
                 if hard:
                     raise TypeError(
-                        f"'{k}={v}' is of invalid type {type(v).__name__}. "
-                        f"Valid '{k}' types are int (i.e. '{k}=0') or float (i.e. '{k}=0.5')"
+                        f"'{ki}={vi}' is of invalid type {type(vi).__name__}. "
+                        f"Valid '{ki}' types are int (i.e. '{ki}=0') or float (i.e. '{ki}=0.5')"
                     )
-                cfg[k] = float(v)
-            elif k in CFG_FRACTION_KEYS:
-                if not isinstance(v, (int, float)):
+                cfg[ki] = float(vi)
+            elif ki in CFG_FRACTION_KEYS:
+                if not isinstance(vi, (int, float)):
                     if hard:
                         raise TypeError(
-                            f"'{k}={v}' is of invalid type {type(v).__name__}. "
-                            f"Valid '{k}' types are int (i.e. '{k}=0') or float (i.e. '{k}=0.5')"
+                            f"'{ki}={vi}' is of invalid type {type(vi).__name__}. "
+                            f"Valid '{ki}' types are int (i.e. '{ki}=0') or float (i.e. '{ki}=0.5')"
                         )
-                    cfg[k] = v = float(v)
-                if not (0.0 <= v <= 1.0):
-                    raise ValueError(f"'{k}={v}' is an invalid value. " f"Valid '{k}' values are between 0.0 and 1.0.")
-            elif k in CFG_INT_KEYS and not isinstance(v, int):
+                    cfg[ki] = vi = float(vi)
+                if not (0.0 <= vi <= 1.0):
+                    raise ValueError(f"'{ki}={vi}' is an invalid value. " f"Valid '{ki}' values are between 0.0 and 1.0.")
+            elif ki in CFG_INT_KEYS and not isinstance(vi, int):
                 if hard:
                     raise TypeError(
-                        f"'{k}={v}' is of invalid type {type(v).__name__}. " f"'{k}' must be an int (i.e. '{k}=8')"
+                        f"'{ki}={vi}' is of invalid type {type(vi).__name__}. " f"'{ki}' must be an int (i.e. '{ki}=8')"
                     )
-                cfg[k] = int(v)
-            elif k in CFG_BOOL_KEYS and not isinstance(v, bool):
+                cfg[ki] = int(vi)
+            elif ki in CFG_BOOL_KEYS and not isinstance(vi, bool):
                 if hard:
                     raise TypeError(
-                        f"'{k}={v}' is of invalid type {type(v).__name__}. "
-                        f"'{k}' must be a bool (i.e. '{k}=True' or '{k}=False')"
+                        f"'{ki}={vi}' is of invalid type {type(vi).__name__}. "
+                        f"'{ki}' must be a bool (i.e. '{ki}=True' or '{ki}=False')"
                     )
-                cfg[k] = bool(v)
+                cfg[ki] = bool(vi)
 
 
 def get_cfg(cfg: Union[Dict, SimpleNamespace]):

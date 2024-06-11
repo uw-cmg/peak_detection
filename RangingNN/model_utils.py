@@ -1,6 +1,98 @@
 import torch
 import time
+import numpy as np
+from peak_detection.RangingNN.utils import LOGGER
 # https://github.com/ultralytics/ultralytics/blob/8d17af7e32ac3b536bdcced7b7705ce688ae6d94/ultralytics/utils/ops.py#L162
+
+
+def make_anchors(feats, strides, grid_cell_offset=0.5):
+    """Generate anchors from features."""
+    anchor_points, stride_tensor = [], []
+    assert feats is not None
+    dtype, device = feats[0].dtype, feats[0].device
+    for i, stride in enumerate(strides):
+        _, _, w = feats[i].shape
+        sf = torch.arange(end=w, device=device, dtype=dtype) + grid_cell_offset  # shift
+        anchor_points.append(sf.view(-1, 1))  # shape [long, 1]
+        stride_tensor.append(torch.full((w, 1), stride, dtype=dtype, device=device))
+    return torch.cat(anchor_points), torch.cat(stride_tensor)
+
+
+def bbox2dist(anchor_points, bbox, reg_max):
+    """Transform bbox(xyxy) to dist(ltrb)."""
+    x1y1, x2y2 = bbox.chunk(2, -1)
+    return torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01)  # dist (lt, rb)
+
+
+def dist2bbox(distance, anchor_points, cw=True, dim=-1):
+    """Transform distance(ltrb) to box(xywh or xyxy)."""
+    l, h = distance.chunk(2, dim)
+    x1y1 = anchor_points - l
+    x2y2 = anchor_points + h
+    if cw:
+        c_xy = (x1y1 + x2y2) / 2
+        wh = x2y2 - x1y1
+        return torch.cat((c_xy, wh), dim)  # xywh bbox
+    return torch.cat((x1y1, x2y2), dim)  # xyxy bbox
+
+
+def cw2lh(x):
+    """
+    Convert bounding range coordinates from (center, width) format to (low, high) format
+    Args:
+        x (np.ndarray | torch.Tensor)
+
+    Returns:
+        y (np.ndarray | torch.Tensor)
+    """
+    assert x.shape[-1] == 2, f"input shape last dimension expected 2 but input shape is {x.shape}"
+    y = torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)  # faster than clone/copy
+    y[..., 0] = x[..., 0] - x[..., 1] / 2.0
+    y[..., 1] = x[..., 0] + x[..., 1] / 2.0
+
+    return y
+
+
+def lh2cw(x):
+    """
+    Convert bounding range coordinates from (low, high) format to (center, width) format
+    Args:
+        x (np.ndarray | torch.Tensor)
+
+    Returns:
+        y (np.ndarray | torch.Tensor)
+    """
+    assert x.shape[-1] == 2, f"input shape last dimension expected 2 but input shape is {x.shape}"
+    y = torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)  # faster than clone/copy
+    y[..., 0] = (x[..., 0] + x[..., 1]) / 2.0
+    y[..., 1] = x[..., 1] - x[..., 0]
+
+    return y
+
+
+def scale_boxes(ranges, ratio_pad, spectrumsz):
+    """
+    Rescales bounding ranges (in the format of lh by default) from img1_shape to the shape
+    of a different image (img0_shape).
+
+    Args:
+        ranges: the orignal ranges loaded from the label.
+        spectrumsz: the shape of resized spectrum
+        ratio_pad (float): a number of ratio for scaling the boxes. Pad is not concidered for now.
+
+    Returns:
+        The scaled bounding ranges, in the format of (low, high)
+    """
+
+    ranges[..., :] /= ratio_pad[0] # TODO feels like it should be *
+    if isinstance(ranges, torch.Tensor):  # faster individually (WARNING: inplace .clamp_() Apple MPS bug)
+        ranges[..., 0] = ranges[..., 0].clamp(0, spectrumsz)  # low
+        ranges[..., 1] = ranges[..., 1].clamp(0, spectrumsz)  # high
+    else:
+        ranges[..., :] = ranges[..., :].clip(0, spectrumsz)
+        # np.array (faster grouped)
+    return ranges
+
 
 def non_max_suppression(
         prediction,
@@ -9,20 +101,18 @@ def non_max_suppression(
         classes=None,
         agnostic=False,
         multi_label=False,
-        labels=(),
         max_det=300,
         nc=0,  # number of classes (optional)
         max_time_img=0.05,
         max_nms=30000,
-        max_wh=7680,
+        max_wh=100,
         in_place=True,
-        rotated=False,
 ):
     """
     Perform non-maximum suppression (NMS) on a set of boxes, with support for masks and multiple labels per box.
 
     Args:
-        prediction (torch.Tensor): A tensor of shape (batch_size, num_classes + 4 + num_masks, num_boxes)
+        prediction (torch.Tensor): A tensor of shape (batch_size, num_classes + 2 + num_masks, num_boxes)
             containing the predicted boxes, classes, and masks. The tensor should be in the format
             output by a model, such as YOLO.
         conf_thres (float): The confidence threshold below which boxes will be filtered out.
@@ -57,10 +147,10 @@ def non_max_suppression(
         prediction = prediction[0]  # select only inference output
 
     bs = prediction.shape[0]  # batch size
-    nc = nc or (prediction.shape[1] - 4)  # number of classes
-    nm = prediction.shape[1] - nc - 4
-    mi = 4 + nc  # mask start index
-    xc = prediction[:, 4:mi].amax(1) > conf_thres  # candidates
+    nc = nc or (prediction.shape[1] - 2)  # number of classes
+    nm = prediction.shape[1] - nc - 2
+    mi = 2 + nc  # mask start index
+    xc = prediction[:, 2:mi].amax(1) > conf_thres  # candidates
 
     # Settings
     # min_wh = 2  # (pixels) minimum box width and height
@@ -68,11 +158,10 @@ def non_max_suppression(
     multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
 
     prediction = prediction.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
-    if not rotated:
-        if in_place:
-            prediction[..., :4] = xywh2xyxy(prediction[..., :4])  # xywh to xyxy
-        else:
-            prediction = torch.cat((xywh2xyxy(prediction[..., :4]), prediction[..., 4:]), dim=-1)  # xywh to xyxy
+    if in_place:
+        prediction[..., :2] = cw2lh(prediction[..., :2])  # xywh to xyxy
+    else:
+        prediction = torch.cat((cw2lh(prediction[..., :2]), prediction[..., 2:]), dim=-1)  # xywh to xyxy
 
     t = time.time()
     output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
@@ -81,20 +170,20 @@ def non_max_suppression(
         # x[((x[:, 2:4] < min_wh) | (x[:, 2:4] > max_wh)).any(1), 4] = 0  # width-height
         x = x[xc[xi]]  # confidence
 
-        # Cat apriori labels if autolabelling
-        if labels and len(labels[xi]) and not rotated:
-            lb = labels[xi]
-            v = torch.zeros((len(lb), nc + nm + 4), device=x.device)
-            v[:, :4] = xywh2xyxy(lb[:, 1:5])  # box
-            v[range(len(lb)), lb[:, 0].long() + 4] = 1.0  # cls
-            x = torch.cat((x, v), 0)
+        # # Cat apriori labels if autolabelling
+        # if labels and len(labels[xi]) and not rotated:
+        #     lb = labels[xi]
+        #     v = torch.zeros((len(lb), nc + nm + 2), device=x.device)
+        #     v[:, :4] = xywh2xyxy(lb[:, 1:5])  # box
+        #     v[range(len(lb)), lb[:, 0].long() + 4] = 1.0  # cls
+        #     x = torch.cat((x, v), 0)
 
         # If none remain process next image
         if not x.shape[0]:
             continue
 
         # Detections matrix nx6 (xyxy, conf, cls)
-        box, cls, mask = x.split((4, nc, nm), 1)
+        box, cls, mask = x.split((2, nc, nm), 1)
 
         if multi_label:
             i, j = torch.where(cls > conf_thres)
@@ -105,37 +194,21 @@ def non_max_suppression(
 
         # Filter by class
         if classes is not None:
-            x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
+            x = x[(x[:, 3:4] == torch.tensor(classes, device=x.device)).any(1)]
 
         # Check shape
         n = x.shape[0]  # number of boxes
         if not n:  # no boxes
             continue
         if n > max_nms:  # excess boxes
-            x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence and remove excess boxes
+            x = x[x[:, 2].argsort(descending=True)[:max_nms]]  # sort by confidence and remove excess boxes
 
         # Batched NMS
-        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
-        scores = x[:, 4]  # scores
-        if rotated:
-            boxes = torch.cat((x[:, :2] + c, x[:, 2:4], x[:, -1:]), dim=-1)  # xywhr
-            i = nms_rotated(boxes, scores, iou_thres)
-        else:
-            boxes = x[:, :4] + c  # boxes (offset by class)
-            i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+        c = x[:, 3:4] * (0 if agnostic else max_wh)  # classes
+        scores = x[:, 2]  # scores
+        boxes = x[:, :2] + c  # boxes (offset by class)
+        i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         i = i[:max_det]  # limit detections
-
-        # # Experimental
-        # merge = False  # use merge-NMS
-        # if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
-        #     # Update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
-        #     from .metrics import box_iou
-        #     iou = box_iou(boxes[i], boxes) > iou_thres  # IoU matrix
-        #     weights = iou * scores[None]  # box weights
-        #     x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
-        #     redundant = True  # require redundant detections
-        #     if redundant:
-        #         i = i[iou.sum(1) > 1]  # require redundancy
 
         output[xi] = x[i]
         if (time.time() - t) > time_limit:
