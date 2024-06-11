@@ -5,10 +5,10 @@ import numpy as np
 import torch
 import contextlib
 
-from peak_detection.RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER, IterableSimpleNamespace
-from peak_detection.RangingNN import callbacks
-from peak_detection.RangingNN.model_utils import non_max_suppression, cw2lh, scale_boxes, lh2cw
-from peak_detection.RangingNN.metrics import box_iou, DetMetrics
+from RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER, IterableSimpleNamespace
+from RangingNN import callbacks
+from RangingNN.model_utils import non_max_suppression, cw2lh, scale_boxes, lh2cw
+from RangingNN.metrics import box_iou, DetMetrics
 
 
 class Profile(contextlib.ContextDecorator):

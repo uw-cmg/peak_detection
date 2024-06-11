@@ -15,13 +15,12 @@ from types import SimpleNamespace
 from typing import Union, Dict
 import random
 from contextlib import contextmanager
-
-from peak_detection.RangingNN.utils import yaml_save, LOGGER, ModelEMA, EarlyStopping, TQDM
-from peak_detection.RangingNN.utils import strip_optimizer, check_imgsz, get_cfg
-from peak_detection.RangingNN import callbacks
-from peak_detection.RangingNN.dataset import BaseDataset, build_dataloader
-from peak_detection.RangingNN.YOLO1D import DetectionModel
-from peak_detection.RangingNN.validator import BaseValidator
+from RangingNN.utils import yaml_save, LOGGER, ModelEMA, EarlyStopping, TQDM
+from RangingNN.utils import strip_optimizer, check_imgsz, get_cfg
+from RangingNN import callbacks
+from RangingNN.dataset import BaseDataset, build_dataloader
+from RangingNN.YOLO1D import DetectionModel
+from RangingNN.validator import BaseValidator
 
 # PyTorch Multi-GPU DDP Constants
 RANK = int(os.getenv("RANK", -1))

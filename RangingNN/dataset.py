@@ -1,7 +1,7 @@
 from torch.utils.data import dataloader, distributed
 import torch
 import os
-from peak_detection.RangingNN.utils import RANK, PIN_MEMORY, DEFAULT_CFG, LOGGER, TQDM
+from RangingNN.utils import RANK, PIN_MEMORY, DEFAULT_CFG, LOGGER, TQDM
 import numpy as np
 import random
 from copy import deepcopy

@@ -1,7 +1,7 @@
 import torch
 import time
 import numpy as np
-from peak_detection.RangingNN.utils import LOGGER
+from RangingNN.utils import LOGGER
 # https://github.com/ultralytics/ultralytics/blob/8d17af7e32ac3b536bdcced7b7705ce688ae6d94/ultralytics/utils/ops.py#L162
 
 

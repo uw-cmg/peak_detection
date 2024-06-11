@@ -1,5 +1,5 @@
 import torch
-from peak_detection.RangingNN.utils import SimpleClass
+from RangingNN.utils import SimpleClass
 from pathlib import Path
 import numpy as np
 

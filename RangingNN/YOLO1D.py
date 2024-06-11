@@ -1,11 +1,11 @@
 import torch
-from peak_detection.RangingNN.modules import *
+from RangingNN.modules import *
 from copy import deepcopy
 from pathlib import Path
 import contextlib
-from peak_detection.RangingNN.loss import v8DetectionLoss
-from peak_detection.RangingNN.utils import yaml_load
-from peak_detection.RangingNN.utils import LOGGER
+from RangingNN.loss import v8DetectionLoss
+from RangingNN.utils import yaml_load
+from RangingNN.utils import LOGGER
 
 
 def make_divisible(x, divisor):

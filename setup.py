@@ -15,7 +15,7 @@ setup(
     install_requires=[
         "torch<=2.2.2",
         "numpy>=1.24.1",
-        "matplotlib==3.7.1",
+        "matplotlib",
         "scikit-image",
     ],
 

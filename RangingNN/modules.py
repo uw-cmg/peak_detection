@@ -5,10 +5,10 @@ import numpy as np
 # https://github.com/ultralytics/ultralytics/blob/main/ultralytics/nn/tasks.py
 
 
-from peak_detection.RangingNN.model_utils import dist2bbox, make_anchors
+from RangingNN.model_utils import dist2bbox, make_anchors
 
 
-from peak_detection.RangingNN.utils import (
+from RangingNN.utils import (
     fuse_conv_and_bn,
     fuse_deconv_and_bn,
     intersect_dicts,

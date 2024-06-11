@@ -4,8 +4,8 @@ import torch.nn.functional as F
 import math
 import numpy as np
 
-from peak_detection.RangingNN.model_utils import lh2cw, cw2lh
-from peak_detection.RangingNN.model_utils import make_anchors
+from RangingNN.model_utils import lh2cw, cw2lh
+from RangingNN.model_utils import make_anchors
 
 
 def bbox_iou(box1, box2, cw=True, GIoU=False, DIoU=False, eps=1e-7):
