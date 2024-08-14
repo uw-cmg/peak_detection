@@ -17,7 +17,7 @@ import random
 from contextlib import contextmanager
 from RangingNN.utils import yaml_save, LOGGER, ModelEMA, EarlyStopping, TQDM
 from RangingNN.utils import strip_optimizer, check_imgsz, get_cfg
-from RangingNN import callbacks
+# from RangingNN import callbacks
 from RangingNN.dataset import BaseDataset, build_dataloader
 from RangingNN.YOLO1D import DetectionModel
 from RangingNN.validator import BaseValidator
@@ -26,20 +26,20 @@ from RangingNN.validator import BaseValidator
 RANK = int(os.getenv("RANK", -1))
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 
-FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLO
-DEFAULT_CFG_PATH = ROOT / "cfg/default.yaml"
+# FILE = Path(__file__).resolve()
+# ROOT = FILE.parents[0]  # YOLO
+# DEFAULT_CFG_PATH = ROOT / "cfg/default.yaml"
 
 
-@contextmanager
-def torch_distributed_zero_first(local_rank: int):
-    """Decorator to make all processes in distributed training wait for each local_master to do something."""
-    initialized = torch.distributed.is_available() and torch.distributed.is_initialized()
-    if initialized and local_rank not in {-1, 0}:
-        dist.barrier(device_ids=[local_rank])
-    yield
-    if initialized and local_rank == 0:
-        dist.barrier(device_ids=[0])
+# @contextmanager
+# def torch_distributed_zero_first(local_rank: int):
+#     """Decorator to make all processes in distributed training wait for each local_master to do something."""
+#     initialized = torch.distributed.is_available() and torch.distributed.is_initialized()
+#     if initialized and local_rank not in {-1, 0}:
+#         dist.barrier(device_ids=[local_rank])
+#     yield
+#     if initialized and local_rank == 0:
+#         dist.barrier(device_ids=[0])
 
 
 def convert_optimizer_state_dict_to_fp16(state_dict):
@@ -56,7 +56,7 @@ def convert_optimizer_state_dict_to_fp16(state_dict):
     return state_dict
 
 
-def select_device(device="", batch=0, newline=False, verbose=True):
+def select_device(device="", batch=0):
     """
     Selects the appropriate PyTorch device based on the provided arguments.
 
@@ -69,8 +69,6 @@ def select_device(device="", batch=0, newline=False, verbose=True):
             Options are 'None', 'cpu', or 'cuda', or '0' or '0,1,2,3'. Defaults to an empty string, which auto-selects
             the first available GPU, or CPU if no GPU is available.
         batch (int, optional): Batch size being used in your model. Defaults to 0.
-        newline (bool, optional): If True, adds a newline at the end of the log string. Defaults to False.
-        verbose (bool, optional): If True, logs the device information. Defaults to True.
 
     Returns:
         (torch.device): Selected device.
@@ -194,8 +192,6 @@ class BaseTrainer:
         epochs (int): Number of epochs to train for.
         start_epoch (int): Starting epoch for training.
         device (torch.device): Device to use for training.
-        amp (bool): Flag to enable AMP (Automatic Mixed Precision).
-        scaler (amp.GradScaler): Gradient scaler for AMP.
         data (str): Path to data.
         trainset (torch.utils.data.Dataset): Training dataset path.
         testset (torch.utils.data.Dataset): Testing dataset path.
@@ -209,6 +205,9 @@ class BaseTrainer:
         tloss (float): Total loss value.
         loss_names (list): List of loss names.
         csv (Path): Path to results CSV file.
+        # not considered
+        amp (bool): Flag to enable AMP (Automatic Mixed Precision).
+        scaler (amp.GradScaler): Gradient scaler for AMP.
     """
 
     def __init__(self, cfg: Dict, _callbacks=None):
@@ -251,7 +250,6 @@ class BaseTrainer:
         # Model and Dataset
         # self.model = check_model_file_from_stem(self.args.model)  # add suffix, i.e. yolov8n -> yolov8n.pt
         self.model = self.args.model
-
         self.data = {"train": self.args.data + '/train', "test": self.args.data + '/test', "nc": 1,
                      'names': ['base_peak']}
         self.trainset, self.testset = self.data["train"], self.data["test"]
@@ -269,17 +267,11 @@ class BaseTrainer:
         self.tloss = None
         self.loss_names = ["Loss"]
         self.csv = self.save_dir / "results.csv"
-        self.plot_idx = [0, 1, 2]
 
         # Callbacks
-        self.callbacks = _callbacks or callbacks.get_default_callbacks()
-        if RANK in {-1, 0}:
-            callbacks.add_integration_callbacks(self)
-
-    def run_callbacks(self, event: str):
-        """Run all existing callbacks associated with a particular event."""
-        for callback in self.callbacks.get(event, []):
-            callback(self)
+        # self.callbacks = _callbacks or callbacks.get_default_callbacks()
+        # if RANK in {-1, 0}:
+        #     callbacks.add_integration_callbacks(self)
 
     def train(self):
         """Allow device='', device=None on Multi-GPU systems to default to device=0."""
@@ -308,9 +300,11 @@ class BaseTrainer:
         """Builds dataloaders and optimizer on correct rank process."""
 
         # Model
-        self.run_callbacks("on_setup_start")  # on_pretrain_routine_start
-        self.model = self.get_model(cfg=self.model, weights=None, verbose=RANK == -1)  # calls Model(cfg, weights)
-
+        if self.args.pretrained:
+            weights = torch.load(self.args.pretrained, map_location="cpu")
+        else:
+            weights = None
+        self.model = self.get_model(cfg=self.model, weights=weights, verbose=RANK == -1)  # calls Model(cfg, weights)
         self.model = self.model.to(self.device)
         self.set_model_attributes()
         self.model.nc = self.data["nc"]  # attach number of classes to model
@@ -335,7 +329,7 @@ class BaseTrainer:
             elif not v.requires_grad and v.dtype.is_floating_point:  # only floating point Tensor can require gradients
                 v.requires_grad = True
 
-        self.amp = False  # automatic mixed precision training for speeding up and save memory
+        self.amp = self.args.amp  # automatic mixed precision training for speeding up and save memory
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp)
 
         # Check imgsz
@@ -362,6 +356,7 @@ class BaseTrainer:
                               1)  # accumulate loss before optimizing,  # nbs nominal batch size
         weight_decay = self.args.weight_decay * self.batch_size * self.accumulate / self.args.nbs  # scale weight_decay
         iterations = math.ceil(len(self.train_loader.dataset) / max(self.batch_size, self.args.nbs)) * self.epochs
+
         self.optimizer = self.build_optimizer(
             model=self.model,
             name=self.args.optimizer,
@@ -375,7 +370,6 @@ class BaseTrainer:
         self.stopper, self.stop = EarlyStopping(patience=self.args.patience), False
         # self.resume_training(ckpt)
         self.scheduler.last_epoch = self.start_epoch - 1  # do not move
-        self.run_callbacks("on_setup_end")
 
     def _do_train(self, world_size=1):
         """Train completed, evaluate and plot if specified by arguments."""
@@ -389,7 +383,7 @@ class BaseTrainer:
         self.epoch_time = None
         self.epoch_time_start = time.time()
         self.train_time_start = time.time()
-        self.run_callbacks("on_train_start")
+
         LOGGER.info(
             f'Image sizes {self.args.spectrumsz} train, {self.args.spectrumsz} val\n'
             f'Using {self.train_loader.num_workers * (world_size or 1)} dataloader workers\n'
@@ -399,7 +393,7 @@ class BaseTrainer:
         epoch = self.start_epoch
         while True:
             self.epoch = epoch
-            self.run_callbacks("on_train_epoch_start")
+
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")  # suppress 'Detected lr_scheduler.step() before optimizer.step()'
                 self.scheduler.step()
@@ -418,8 +412,11 @@ class BaseTrainer:
 
             self.tloss = None
             self.optimizer.zero_grad()
+
             for i, batch in pbar:
-                self.run_callbacks("on_train_batch_start")
+                for key in {"bboxes", "cls", "spectrum", "batch_idx"}:
+                    batch[key] = batch[key].to(self.device)
+
                 # Warmup
                 ni = i + nb * epoch
                 if ni <= nw:
@@ -466,20 +463,19 @@ class BaseTrainer:
                         ("%11s" * 2 + "%11.4g" * (2 + loss_len))
                         % (f"{epoch + 1}/{self.epochs}", mem, *losses, batch["cls"].shape[0], batch["spectrum"].shape[-1])
                     )
-                    self.run_callbacks("on_batch_end")
+
                     # if self.args.plots and ni in self.plot_idx:
                     #     self.plot_training_samples(batch, ni)
 
-                self.run_callbacks("on_train_batch_end")
-
             self.lr = {f"lr/pg{ir}": x["lr"] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers
-            self.run_callbacks("on_train_epoch_end")
+
             if RANK in {-1, 0}:
                 final_epoch = epoch + 1 >= self.epochs
                 self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights"])
 
                 # Validation
                 if self.args.val or final_epoch or self.stopper.possible_stop or self.stop:
+                    print("\n on_validate")
                     self.metrics, self.fitness = self.validate()
                 self.save_metrics(metrics={**self.label_loss_items(self.tloss), **self.metrics, **self.lr})
                 self.stop |= self.stopper(epoch + 1, self.fitness) or final_epoch
@@ -489,7 +485,7 @@ class BaseTrainer:
                 # Save model
                 if self.args.save or final_epoch:
                     self.save_model()
-                    self.run_callbacks("on_model_save")
+                    print("on_model_save")
 
             # Scheduler
             t = time.time()
@@ -501,7 +497,7 @@ class BaseTrainer:
                 self._setup_scheduler()
                 self.scheduler.last_epoch = self.epoch  # do not move
                 self.stop |= epoch >= self.epochs  # stop if exceeded epochs
-            self.run_callbacks("on_fit_epoch_end")
+            print("on_fit_epoch_end")
             gc.collect()
             torch.cuda.empty_cache()  # clear GPU memory at end of epoch, may help reduce CUDA out of memory errors
 
@@ -516,13 +512,13 @@ class BaseTrainer:
                 f"\n{epoch - self.start_epoch + 1} epochs completed in "
                 f"{(time.time() - self.train_time_start) / 3600:.3f} hours."
             )
-            self.final_eval()
+            # self.final_eval() ###############mute for now
             if self.args.plots:
                 self.plot_metrics()
-            self.run_callbacks("on_train_end")
+            print("on_train_end")
         gc.collect()
         torch.cuda.empty_cache()
-        self.run_callbacks("teardown")
+        print("teardown")
 
     def save_model(self):
         """Save model training checkpoints with additional metadata."""
@@ -597,7 +593,7 @@ class BaseTrainer:
         """Returns a DetectionValidator for YOLO model validation."""
         self.loss_names = "box_loss", "cls_loss", "dfl_loss"
         return BaseValidator(
-            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
+            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=None
         )
 
     def label_loss_items(self, loss_items=None, prefix="train"):
@@ -631,6 +627,11 @@ class BaseTrainer:
 
     def save_metrics(self, metrics):
         """Saves training metrics to a CSV file."""
+        losses = metrics[list(metrics.keys())[0]]
+        updict = {'box_loss': losses[0],  'cls_loss': losses[1],  'dfl_loss': losses[2]}
+        metrics.pop(list(metrics.keys())[0])
+        metrics = {**updict, **metrics}
+
         keys, vals = list(metrics.keys()), list(metrics.values())
         n = len(metrics) + 1  # number of cols
         s = "" if self.csv.exists() else (("%23s," * n % tuple(["epoch"] + keys)).rstrip(",") + "\n")  # header
@@ -656,7 +657,7 @@ class BaseTrainer:
                     self.validator.args.plots = self.args.plots
                     self.metrics = self.validator(model=f)
                     self.metrics.pop("fitness", None)
-                    self.run_callbacks("on_fit_epoch_end")
+                    print("on_fit_epoch_end")
 
     def build_optimizer(self, model, name="auto", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
         """

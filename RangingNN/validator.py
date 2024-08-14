@@ -5,8 +5,9 @@ import numpy as np
 import torch
 import contextlib
 
+from RangingNN.YOLO1D import DetectionModel
 from RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER, IterableSimpleNamespace
-from RangingNN import callbacks
+# from RangingNN import callbacks
 from RangingNN.model_utils import non_max_suppression, cw2lh, scale_boxes, lh2cw
 from RangingNN.metrics import box_iou, DetMetrics
 
@@ -123,7 +124,7 @@ class BaseValidator:
         self.args.spectrumsz = check_imgsz(self.args.spectrumsz, max_dim=1)
         self.nt_per_class = None
         self.plots = {}
-        self.callbacks = _callbacks or callbacks.get_default_callbacks()
+        # self.callbacks = _callbacks or callbacks.get_default_callbacks()
         self.metrics = DetMetrics(save_dir=self.save_dir)
 
     @torch.inference_mode()
@@ -132,18 +133,44 @@ class BaseValidator:
         gets priority).
         """
         self.training = trainer is not None
+        # training is force to be true
         if self.training:
             self.device = trainer.device
             self.data = trainer.data
             self.args.half = self.device.type != "cpu"  # force FP16 val during training
+            self.args.half = False  # Will not use FP16
+
             model = trainer.ema.ema or trainer.model
+
             model = model.half() if self.args.half else model.float()
             # self.model = model
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
-        # skip validation of a pre-trained model for now, or I can leave that in Predictor
-        self.run_callbacks("on_val_start")
+        else:
+            weights = torch.load(model)
+            model = DetectionModel(self.args, nc=1)
+            model.load(weights)
+            self.device = model.device  # update device
+            self.args.half = model.fp16  # update half
+            stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+            imgsz = check_imgsz(self.args.imgsz, stride=stride)
+            if engine:
+                self.args.batch = model.batch_size
+            elif not pt and not jit:
+                self.args.batch = model.metadata.get("batch", 1)  # export.py models default to batch-size 1
+                LOGGER.info(f"Setting batch={self.args.batch} input of shape ({self.args.batch}, 3, {imgsz}, {imgsz})")
+
+            if self.device.type in {"cpu", "mps"}:
+                self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
+            if not pt:
+                self.args.rect = False
+            self.stride = model.stride  # used in get_dataloader() for padding
+            self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
+
+            model.eval()
+        # skip validation of a pre-trained model for now(training=False), or I can leave that in Predictor
+        # self.run_callbacks("on_val_start")
         dt = (
             Profile(device=self.device),
             Profile(device=self.device),
@@ -154,7 +181,9 @@ class BaseValidator:
         self.init_metrics(model)
         self.jdict = []  # empty before each val
         for batch_i, batch in enumerate(bar):
-            self.run_callbacks("on_val_batch_start")
+            for key in {"bboxes", "cls", "spectrum", "batch_idx"}:
+                batch[key] = batch[key].to(self.device)
+            # self.run_callbacks("on_val_batch_start")
             self.batch_i = batch_i
             # Preprocess
             with dt[0]:
@@ -162,32 +191,34 @@ class BaseValidator:
 
             # Inference
             with dt[1]:
-                preds = model(batch["img"])  # no augment
+                preds = model(batch["spectrum"])  # e.g.torch.Size([16, 3, 6720]) torch.Size([16, 33, 3840]
 
             # Loss
             with dt[2]:
                 if self.training:
-                    self.loss += model.loss(batch, preds)[1]
-
+                    self.loss += model.loss(batch, preds)[1]  # torch.Size([3]) accumulated
             # Postprocess
             with dt[3]:
-                preds = self.postprocess(preds)
+                preds_post = self.postprocess(preds)  # applied nms output box xy in index
 
-            self.update_metrics(preds, batch)
+            self.update_metrics(preds_post, batch)
             # if self.args.plots and batch_i < 3:
             #     self.plot_val_samples(batch, batch_i)
             #     self.plot_predictions(batch, preds, batch_i)
 
-            self.run_callbacks("on_val_batch_end")
+            # self.run_callbacks("on_val_batch_end")
         stats = self.get_stats()
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
         self.finalize_metrics()
         self.print_results()
-        self.run_callbacks("on_val_end")
+        # self.run_callbacks("on_val_end")
         if self.training:
             model.float()
             results = {**stats, **trainer.label_loss_items(self.loss.cpu() / len(self.dataloader), prefix="val")}
-            return {k: round(float(v), 5) for k, v in results.items()}  # return results as 5 decimal place floats
+            # the first one is tensor[3]
+
+            # return {k: round(float(v), 5) for k, v in results.items()}  # return results as 5 decimal place floats
+            return results
         else:
             LOGGER.info(
                 "Speed: %.1fms preprocess, %.1fms inference, %.1fms loss, %.1fms postprocess per image"
@@ -223,7 +254,7 @@ class BaseValidator:
             preds,
             self.args.conf,
             self.args.iou,
-            multi_label=True,
+            multi_label=False,
             agnostic=self.args.single_cls,
             max_det=self.args.max_det,
         )
@@ -238,14 +269,14 @@ class BaseValidator:
                 pred_cls=torch.zeros(0, device=self.device),
                 tp=torch.zeros(npr, self.niou, dtype=torch.bool, device=self.device),
             )
-            pbatch = self._prepare_batch(si, batch) # scaled to
+            pbatch = self._prepare_batch(si, batch) # scaled to left and right index
             cls, bbox = pbatch.pop("cls"), pbatch.pop("bbox")
             nl = len(cls)
             stat["target_cls"] = cls
             if npr == 0:
                 if nl:
                     for k in self.stats.keys():
-                        self.stats[k].append(stat[k])
+                        self.stats[k].append(stat[k])  # so if no objects in pred, will append the all zero stats
                     # if self.args.plots:
                     #     self.confusion_matrix.process_batch(detections=None, gt_bboxes=bbox, gt_cls=cls)
                 continue
@@ -265,33 +296,36 @@ class BaseValidator:
             for k in self.stats.keys():
                 self.stats[k].append(stat[k])
 
-            # Save
-            if self.args.save_json:
-                self.pred_to_json(predn, batch["im_file"][si])
+            # # Save
+            # if self.args.save_json:
+            #     self.pred_to_json(predn, batch["im_file"][si])
 
     def _prepare_batch(self, si, batch):
         """Prepares a batch of images and annotations for validation."""
-        idx = batch["batch_idx"] == si
+        idx = (batch["batch_idx"] == si).view(-1, 1)[:, 0]
         cls = batch["cls"][idx].squeeze(-1)
         bbox = batch["bboxes"][idx]
         ori_shape = batch["ori_shape"][si]
-        spectrumsz = batch["resized_shape"]
+        spectrumsz = batch["resized_shape"][si]
         ratio_pad = batch["ratio_pad"][si]
         if len(cls):
-            bbox = cw2lh(bbox) * torch.tensor(spectrumsz, device=self.device) # target ranges denormalized, in pixels
-            scale_boxes(bbox, ratio_pad, spectrumsz)  # native-space labels
+            bbox = cw2lh(bbox) * torch.tensor(spectrumsz) # target ranges denormalized, in pixels
+            bbox = scale_boxes(bbox, ratio_pad, spectrumsz)  # native-space labels
         return {"cls": cls, "bbox": bbox, "ori_shape": ori_shape, "spectrumsz": spectrumsz, "ratio_pad": ratio_pad}
 
     def _prepare_pred(self, pred, pbatch):
-        """Prepares a batch of images and annotations for validation."""
+        """
+        Prepares a batch of images and annotations for validation.
+        Pred is already in index number
+        TODO: check later if resize the spectrum
+        """
         # predn = pred.clone()
         # ops.scale_boxes(
         #     pbatch["imgsz"], predn[:, :4], pbatch["ori_shape"], ratio_pad=pbatch["ratio_pad"]
         # )  # native-space pred
-        predn = pred * torch.tensor(pbatch['spectrumsz'])
-        # TODO i think I've matched the pred and processed label, i.e. denormalized and resize considered
+        # predn = pred * torch.tensor(pbatch['spectrumsz'])
         # I assume the model predictions are center-width normalized. Change here if it's not.
-        return predn
+        return pred
 
     def match_predictions(self, pred_classes, true_classes, iou, use_scipy=False):
         """
@@ -308,9 +342,11 @@ class BaseValidator:
         """
         # Dx10 matrix, where D - detections, 10 - IoU thresholds
         correct = np.zeros((pred_classes.shape[0], self.iouv.shape[0])).astype(bool)
+
         # LxD matrix where L - labels (rows), D - detections (columns)
         correct_class = true_classes[:, None] == pred_classes
-        iou = iou * correct_class  # zero out the wrong classes
+
+        iou = (iou.squeeze()) * (correct_class.squeeze())  # zero out the wrong classes
         iou = iou.cpu().numpy()
         for i, threshold in enumerate(self.iouv.cpu().tolist()):
             if use_scipy:
@@ -348,13 +384,9 @@ class BaseValidator:
         Returns:
             (torch.Tensor): Correct prediction matrix of shape [N, 10] for 10 IoU levels.
         """
+
         iou = box_iou(gt_bboxes, detections[:, :2])
         return self.match_predictions(detections[:, 3], gt_cls, iou)
-
-    def run_callbacks(self, event: str):
-        """Runs all callbacks associated with a specified event."""
-        for callback in self.callbacks.get(event, []):
-            callback(self)
 
     def preprocess(self, batch):
         """Preprocesses an input batch."""

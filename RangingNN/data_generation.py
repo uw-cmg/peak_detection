@@ -15,10 +15,11 @@ class Augmentation:
     """
     read the raw source files, apply augmentation, and save as h5 files
     expand_factor:
+    remove_thin: whether remove the original ranges that are thinner that the bin_width, here 0.01da chosen
     """
 
     def __init__(self, apt_file, ranging_file, savepath, bin_width=0.01, expand_factor=100, shift_range=(1, 10),
-                 norm=True):
+                 norm=True, remove_thin=True):
         self.bin_width = bin_width
         self.apt_file = apt_file
         self.ranging_file = ranging_file
@@ -26,6 +27,7 @@ class Augmentation:
         self.expand_factor = expand_factor
         self.shift_range = shift_range
         self.savepath = savepath
+        self.remove_thin = remove_thin
 
     def load_voxel_spectrum(self):
         """
@@ -65,6 +67,11 @@ class Augmentation:
         save normalization after other augmentation
         """
         range_data = apav.RangeCollection.from_rrng(self.ranging_file)
+        if self.remove_thin:
+            peakwidth = np.array([r.upper - r.lower for r in range_data.ranges])
+            rng_array = np.array(range_data.ranges)
+            range_data = apav.RangeCollection(rng_array[np.where(peakwidth > self.bin_width)])
+
         peakwidth = np.array([r.upper - r.lower for r in range_data.ranges])
         peakcenter = np.array([(r.upper + r.lower) * 0.5 for r in range_data.ranges])
         peaks = np.vstack((peakcenter, peakwidth)).T

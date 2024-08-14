@@ -22,7 +22,7 @@ def box_iou(box1, box2, eps=1e-7):
         (torch.Tensor): An NxM tensor containing the pairwise IoU values for every element in box1 and box2.
     """
 
-    (a1, a2), (b1, b2) = box1.unsqueeze(1).chunk(1, 1), box2.unsqueeze(0).chunk(1, 1)
+    (a1, a2), (b1, b2) = box1.unsqueeze(1).chunk(2, 2), box2.unsqueeze(0).chunk(2, 2) # .chunk(splits, dimention)
     inter = (torch.min(a2, b2) - torch.max(a1, b1)).clamp_(0)
     # .prod(2) # no need to get the product to get area
     # IoU = inter / (area1 + area2 - inter)
@@ -178,22 +178,26 @@ class Metric(SimpleClass):
             self.f1,
             self.all_ap,
             self.ap_class_index,
+            self. p_curve,
+            self.r_curve,
+            self.f1_curve,
+            self.px,
+            self.prec_values,
         ) = results
-
     @property
     def curves(self):
         """Returns a list of curves for accessing specific metrics curves."""
         return []
 
-    # @property
-    # def curves_results(self):
-    #     """Returns a list of curves for accessing specific metrics curves."""
-    #     return [
-    #         [self.px, self.prec_values, "Recall", "Precision"],
-    #         [self.px, self.f1_curve, "Confidence", "F1"],
-    #         [self.px, self.p_curve, "Confidence", "Precision"],
-    #         [self.px, self.r_curve, "Confidence", "Recall"],
-    #     ]
+    @property
+    def curves_results(self):
+        """Returns a list of curves for accessing specific metrics curves."""
+        return [
+            [self.px, self.prec_values, "Recall", "Precision"],
+            [self.px, self.f1_curve, "Confidence", "F1"],
+            [self.px, self.p_curve, "Confidence", "Precision"],
+            [self.px, self.r_curve, "Confidence", "Recall"],
+        ]
 
 
 def compute_ap(recall, precision):
@@ -281,7 +285,6 @@ def ap_per_class(
 
     # Create Precision-Recall curve and compute AP for each class
     x, prec_values = np.linspace(0, 1, 1000), []
-
     # Average precision, precision and recall curves
     ap, p_curve, r_curve = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
     for ci, c in enumerate(unique_classes):
@@ -313,8 +316,8 @@ def ap_per_class(
 
     # Compute F1 (harmonic mean of precision and recall)
     f1_curve = 2 * p_curve * r_curve / (p_curve + r_curve + eps)
-    names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
-    names = dict(enumerate(names))  # to dict
+    # names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
+    # names = dict(enumerate(names))  # to dict
     # if plot:
     #     plot_pr_curve(x, prec_values, ap, save_dir / f"{prefix}PR_curve.png", names, on_plot=on_plot)
     #     plot_mc_curve(x, f1_curve, save_dir / f"{prefix}F1_curve.png", names, ylabel="F1", on_plot=on_plot)
@@ -379,7 +382,7 @@ class DetMetrics(SimpleClass):
             save_dir=self.save_dir,
             names=self.names,
             on_plot=self.on_plot,
-        )[2:]
+        )[2:] # p, r, f1, ap, unique_classes.astype(int), p_curve, r_curve, f1_curve, x, prec_values
         self.box.nc = len(self.names)
         self.box.update(results)
 

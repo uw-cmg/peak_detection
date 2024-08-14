@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from RangingNN.model_utils import lh2cw, cw2lh
-from RangingNN.model_utils import make_anchors
+from RangingNN.model_utils import make_anchors, dist2bbox, bbox2dist
 
 
 def bbox_iou(box1, box2, cw=True, GIoU=False, DIoU=False, eps=1e-7):
@@ -399,7 +399,7 @@ class v8DetectionLoss:
     def __call__(self, preds, batch):
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
-        feats = preds[1] if isinstance(preds, tuple) else preds
+        feats = preds[1] if isinstance(preds, tuple) else preds  # only use the second detect layer output?
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
             (self.reg_max * 2, self.nc), 1
         )

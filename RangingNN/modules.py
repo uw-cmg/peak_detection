@@ -48,10 +48,11 @@ class DFL(nn.Module):
     def __init__(self, c1=16):
         """Initialize a convolutional layer with a given number of input channels."""
         super().__init__()
-        self.conv = nn.Conv1d(c1, 1, 1, bias=False).requires_grad_(False)
+        self.conv = nn.Conv2d(c1, 1, 1, bias=False).requires_grad_(False)
+        # here it need 2d for 2d layer of shape[reg_max, num_anchors]
+
         x = torch.arange(c1, dtype=torch.float)
-        # self.conv.weight.data[:] = nn.Parameter(x.view(1, c1, 1, 1))
-        self.conv.weight.data[:] = nn.Parameter(x.view(1, c1, 1))  # changed
+        self.conv.weight.data[:] = nn.Parameter(x.view(1, c1, 1, 1))
 
         self.c1 = c1
 
@@ -340,6 +341,7 @@ class Detect(nn.Module):
         for i in range(self.nl):
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
         if self.training:  # Training path
+            # shape e.g [batchsize, reg*2+1, 3840],[batchsize, reg*2+1, 1920], [batchsize, reg*2+1, 960]
             return x
 
         # Inference path
@@ -364,6 +366,7 @@ class Detect(nn.Module):
         #     norm = self.strides / (self.stride[0] * grid_size)
         #     dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
         # else:
+
         dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
         y = torch.cat((dbox, cls.sigmoid()), 1)
@@ -398,6 +401,7 @@ class BaseModel(nn.Module):
         """
         if isinstance(x, dict):  # for cases of training and validating while training.
             return self.loss(x, *args, **kwargs)
+
         return self.predict(x, *args, **kwargs)
 
     def predict(self, x, profile=False, visualize=False, embed=None):
@@ -443,6 +447,7 @@ class BaseModel(nn.Module):
                 embeddings.append(nn.functional.adaptive_avg_pool1d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
+
         return x
 
     def fuse(self, verbose=True):
@@ -485,7 +490,7 @@ class BaseModel(nn.Module):
         bn = tuple(v for k, v in nn.__dict__.items() if "Norm" in k)  # normalization layers, i.e. BatchNorm1d()
         return sum(isinstance(v, bn) for v in self.modules()) < thresh  # True if < 'thresh' BatchNorm layers in model
 
-    def info(self, detailed=False, verbose=True, imgsz=640):
+    def info(self, detailed=False, verbose=True, imgsz=30720):
         """
         Prints model information.
 

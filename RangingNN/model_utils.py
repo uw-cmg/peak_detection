@@ -94,6 +94,7 @@ def scale_boxes(ranges, ratio_pad, spectrumsz):
     return ranges
 
 
+
 def non_max_suppression(
         prediction,
         conf_thres=0.25,
@@ -102,14 +103,14 @@ def non_max_suppression(
         agnostic=False,
         multi_label=False,
         max_det=300,
-        nc=0,  # number of classes (optional)
-        max_time_img=0.05,
+        nc=1,  # number of classes (optional)
+        max_time_img=5,
         max_nms=30000,
         max_wh=100,
         in_place=True,
 ):
     """
-    Perform non-maximum suppression (NMS) on a set of boxes, with support for masks and multiple labels per box.
+    Perform non-maximum suppression (NMS) on a set of boxes, (with support for masks and multiple labels per box.)
 
     Args:
         prediction (torch.Tensor): A tensor of shape (batch_size, num_classes + 2 + num_masks, num_boxes)
@@ -138,36 +139,29 @@ def non_max_suppression(
             shape (num_boxes, 6 + num_masks) containing the kept boxes, with columns
             (x1, y1, x2, y2, confidence, class, mask1, mask2, ...).
     """
-    import torchvision  # scope for faster 'import ultralytics'
-
     # Checks
     assert 0 <= conf_thres <= 1, f"Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0"
     assert 0 <= iou_thres <= 1, f"Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0"
-    if isinstance(prediction, (list, tuple)):  # YOLOv8 model in validation model, output = (inference_out, loss_out)
+    if isinstance(prediction, (list, tuple)):  # YOLOv8 model in validation mode, output = (inference_out, loss_out)
         prediction = prediction[0]  # select only inference output
 
     bs = prediction.shape[0]  # batch size
     nc = nc or (prediction.shape[1] - 2)  # number of classes
-    nm = prediction.shape[1] - nc - 2
     mi = 2 + nc  # mask start index
     xc = prediction[:, 2:mi].amax(1) > conf_thres  # candidates
 
     # Settings
-    # min_wh = 2  # (pixels) minimum box width and height
     time_limit = 2.0 + max_time_img * bs  # seconds to quit after
-    multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
 
-    prediction = prediction.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
+    prediction = prediction.transpose(-1, -2)  # shape(bs,3,6720) to shape(1,6720,3)
     if in_place:
         prediction[..., :2] = cw2lh(prediction[..., :2])  # xywh to xyxy
     else:
         prediction = torch.cat((cw2lh(prediction[..., :2]), prediction[..., 2:]), dim=-1)  # xywh to xyxy
 
     t = time.time()
-    output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
+    output = [torch.zeros((0, 4), device=prediction.device)] * bs  # 6 changed to 4
     for xi, x in enumerate(prediction):  # image index, image inference
-        # Apply constraints
-        # x[((x[:, 2:4] < min_wh) | (x[:, 2:4] > max_wh)).any(1), 4] = 0  # width-height
         x = x[xc[xi]]  # confidence
 
         # # Cat apriori labels if autolabelling
@@ -183,14 +177,11 @@ def non_max_suppression(
             continue
 
         # Detections matrix nx6 (xyxy, conf, cls)
-        box, cls, mask = x.split((2, nc, nm), 1)
+        box, cls = x.split((2, nc), 1)
 
-        if multi_label:
-            i, j = torch.where(cls > conf_thres)
-            x = torch.cat((box[i], x[i, 4 + j, None], j[:, None].float(), mask[i]), 1)
-        else:  # best class only
-            conf, j = cls.max(1, keepdim=True)
-            x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres]
+        # best class only
+        conf, j = cls.max(1, keepdim=True)
+        x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
         if classes is not None:
@@ -204,15 +195,82 @@ def non_max_suppression(
             x = x[x[:, 2].argsort(descending=True)[:max_nms]]  # sort by confidence and remove excess boxes
 
         # Batched NMS
-        c = x[:, 3:4] * (0 if agnostic else max_wh)  # classes
         scores = x[:, 2]  # scores
-        boxes = x[:, :2] + c  # boxes (offset by class)
-        i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+        boxes = x[:, :2]  # boxes
+        i = nms(boxes, scores, iou_thres)  # NMS
         i = i[:max_det]  # limit detections
 
         output[xi] = x[i]
         if (time.time() - t) > time_limit:
-            LOGGER.warning(f"WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded")
+            LOGGER.warning(f"WARNING ?? NMS time limit {time_limit:.3f}s exceeded")
             break  # time limit exceeded
 
     return output
+
+
+def nms(boxes, scores, thresh_iou):
+    """
+    Apply non-maximum suppression to avoid detecting too many
+    overlapping bounding boxes for a given object.
+    Args:
+        boxes: (tensor) The location preds for the image
+            along with the class predscores, Shape: [num_boxes,2].
+        scores: (tensor) The confidence scores,  Shape: [num_boxes,1].
+        thresh_iou: (float) The overlap thresh for suppressing unnecessary boxes.
+    Returns:
+        A list of filtered boxes, Shape: [ , 5]
+    """
+
+    # we extract coordinates for every
+    # prediction box present in P
+    x1 = boxes[:, 0]
+    x2 = boxes[:, 1]
+    # calculate area of every block in P
+    areas = (x2 - x1)
+
+    # sort the prediction boxes according to their confidence scores, the same order as the pre-sorted boxes and scores
+    order = scores.argsort(descending=True)
+    # initialise an empty list for filtered prediction boxes
+    keep = []
+
+    while len(order) > 0:
+
+        # extract the index of the prediction with highest score we call this prediction S
+        idx = order[-1]
+        # push S in filtered predictions list
+        keep.append(idx)
+        # remove S from P
+        order = order[:-1]
+        # sanity check
+        if len(order) == 0:
+            break
+
+        # select coordinates of BBoxes according to
+        # the indices in order
+        xx1 = torch.index_select(x1, dim=0, index=order)
+        xx2 = torch.index_select(x2, dim=0, index=order)
+
+        # find the coordinates of the intersection boxes
+        xx1 = torch.max(xx1, x1[idx])
+        xx2 = torch.min(xx2, x2[idx])
+
+        # find height and width of the intersection boxes
+        w = xx2 - xx1
+
+        # take max with 0.0 to avoid negative w due to non-overlapping boxes
+        w = torch.clamp(w, min=0.0)  # the intersection area
+
+        # find the areas of BBoxes according the indices in order
+        rem_areas = torch.index_select(areas, dim=0, index=order)
+
+        # find the union of every prediction T in boxes with the prediction S
+        # Note that areas[idx] represents area of S
+        union = (rem_areas - w) + areas[idx]
+
+        # find the IoU of every prediction in P with S
+        IoU = w / union
+
+        # keep the boxes with IoU less than thresh_iou
+        mask = IoU < thresh_iou
+        order = order[mask]
+    return torch.tensor(keep)

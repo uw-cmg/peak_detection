@@ -254,7 +254,7 @@ class BaseDataset(Dataset):
 
             sp = rescale(sp, (1, self.spectrumsz / sz0)) # keep the channel dimention not rescaled
 
-        return torch.tensor(sp), sz0, sp.shape[0]
+        return torch.tensor(sp), sz0, sp.shape[1]
 
     def get_labels(self):
         """Returns dictionary of labels for training."""

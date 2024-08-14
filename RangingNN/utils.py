@@ -628,7 +628,7 @@ def get_flops(model, imgsz=640):
         return 0.0
 
 
-def model_info(model, detailed=False, verbose=True, imgsz=640):
+def model_info(model, detailed=False, verbose=True, imgsz=30720):
     """
     Model information.
 
