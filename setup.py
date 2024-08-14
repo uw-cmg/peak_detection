@@ -13,8 +13,8 @@ setup(
     # description='',
     # keywords=[],
     install_requires=[
-        "torch=2.2.2",
-        "torchvision=0.16.2",
+        "torch==2.2.2",
+        "torchvision==0.16.2",
         "numpy>=1.24.1",
         "matplotlib",
         "scikit-image",
