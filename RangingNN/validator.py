@@ -6,58 +6,10 @@ import torch
 import contextlib
 
 from RangingNN.YOLO1D import DetectionModel
-from RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER, IterableSimpleNamespace
-# from RangingNN import callbacks
+from RangingNN.utils import get_cfg, check_imgsz, TQDM, LOGGER, IterableSimpleNamespace, Profile
 from RangingNN.model_utils import non_max_suppression, cw2lh, scale_boxes, lh2cw
 from RangingNN.metrics import box_iou, DetMetrics
 
-
-class Profile(contextlib.ContextDecorator):
-    """
-    YOLOv8 Profile class. Use as a decorator with @Profile() or as a context manager with 'with Profile():'.
-
-    Example:
-        ```python
-        from ultralytics.utils.ops import Profile
-
-        with Profile(device=device) as dt:
-            pass  # slow operation here
-
-        print(dt)  # prints "Elapsed time is 9.5367431640625e-07 s"
-        ```
-    """
-
-    def __init__(self, t=0.0, device: torch.device = None):
-        """
-        Initialize the Profile class.
-
-        Args:
-            t (float): Initial time. Defaults to 0.0.
-            device (torch.device): Devices used for model inference. Defaults to None (cpu).
-        """
-        self.t = t
-        self.device = device
-        self.cuda = bool(device and str(device).startswith("cuda"))
-
-    def __enter__(self):
-        """Start timing."""
-        self.start = self.time()
-        return self
-
-    def __exit__(self, type, value, traceback):  # noqa
-        """Stop timing."""
-        self.dt = self.time() - self.start  # delta-time
-        self.t += self.dt  # accumulate dt
-
-    def __str__(self):
-        """Returns a human-readable string representing the accumulated elapsed time in the profiler."""
-        return f"Elapsed time is {self.t} s"
-
-    def time(self):
-        """Get current time."""
-        if self.cuda:
-            torch.cuda.synchronize(self.device)
-        return time.time()
 
 
 class BaseValidator:
@@ -86,10 +38,9 @@ class BaseValidator:
                       batch processing times in milliseconds.
         save_dir (Path): Directory to save results.
         plots (dict): Dictionary to store plots for visualization.
-        callbacks (dict): Dictionary to store various callback functions.
     """
 
-    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None):
+    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None):
         """
         Initializes a BaseValidator instance.
 
@@ -98,7 +49,6 @@ class BaseValidator:
             save_dir (Path, optional): Directory to save results.
             pbar (tqdm.tqdm): Progress bar for displaying progress.
             args (SimpleNamespace): Configuration for the validator.
-            _callbacks (dict): Dictionary to store various callback functions.
         """
         self.args = args if isinstance(args, IterableSimpleNamespace) else get_cfg(args)
         self.dataloader = dataloader
@@ -124,7 +74,6 @@ class BaseValidator:
         self.args.spectrumsz = check_imgsz(self.args.spectrumsz, max_dim=1)
         self.nt_per_class = None
         self.plots = {}
-        # self.callbacks = _callbacks or callbacks.get_default_callbacks()
         self.metrics = DetMetrics(save_dir=self.save_dir)
 
     @torch.inference_mode()
@@ -147,30 +96,7 @@ class BaseValidator:
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
-        else:
-            weights = torch.load(model)
-            model = DetectionModel(self.args, nc=1)
-            model.load(weights)
-            self.device = model.device  # update device
-            self.args.half = model.fp16  # update half
-            stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-            imgsz = check_imgsz(self.args.imgsz, stride=stride)
-            if engine:
-                self.args.batch = model.batch_size
-            elif not pt and not jit:
-                self.args.batch = model.metadata.get("batch", 1)  # export.py models default to batch-size 1
-                LOGGER.info(f"Setting batch={self.args.batch} input of shape ({self.args.batch}, 3, {imgsz}, {imgsz})")
 
-            if self.device.type in {"cpu", "mps"}:
-                self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
-            if not pt:
-                self.args.rect = False
-            self.stride = model.stride  # used in get_dataloader() for padding
-            self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
-
-            model.eval()
-        # skip validation of a pre-trained model for now(training=False), or I can leave that in Predictor
-        # self.run_callbacks("on_val_start")
         dt = (
             Profile(device=self.device),
             Profile(device=self.device),
@@ -202,16 +128,11 @@ class BaseValidator:
                 preds_post = self.postprocess(preds)  # applied nms output box xy in index
 
             self.update_metrics(preds_post, batch)
-            # if self.args.plots and batch_i < 3:
-            #     self.plot_val_samples(batch, batch_i)
-            #     self.plot_predictions(batch, preds, batch_i)
 
-            # self.run_callbacks("on_val_batch_end")
         stats = self.get_stats()
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
         self.finalize_metrics()
         self.print_results()
-        # self.run_callbacks("on_val_end")
         if self.training:
             model.float()
             results = {**stats, **trainer.label_loss_items(self.loss.cpu() / len(self.dataloader), prefix="val")}
@@ -290,7 +211,7 @@ class BaseValidator:
 
             # Evaluate
             if nl:
-                stat["tp"] = self._process_batch(predn, bbox, cls)
+                stat["tp"] = self._process_batch(predn, bbox, cls) # A Matrix for all tp for different iou
                 # if self.args.plots:
                 #     self.confusion_matrix.process_batch(predn, bbox, cls)
             for k in self.stats.keys():

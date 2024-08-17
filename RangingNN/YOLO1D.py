@@ -1,10 +1,12 @@
+from typing import Union
+
 import torch
 from RangingNN.modules import *
 from copy import deepcopy
 from pathlib import Path
 import contextlib
 from RangingNN.loss import v8DetectionLoss
-from RangingNN.utils import yaml_load
+from RangingNN.utils import yaml_load, IterableSimpleNamespace
 from RangingNN.utils import LOGGER
 
 
@@ -42,7 +44,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         if not scale:
             scale = tuple(scales.keys())[0]
         depth, width, max_channels = scales[scale]
-        LOGGER.warning(f"scale='{scales[scale]}'.")
+        # LOGGER.warning(f"scale='{scales[scale]}'.")
 
     if act:
         Conv.default_act = eval(act)  # redefine default activation, i.e. Conv.default_act = nn.SiLU()
@@ -50,7 +52,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             LOGGER.info(f"{'activation:'} {act}")  # print
     ch = [ch] # equals 1
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
-    for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args
+    for i, (f, n, m, args) in enumerate(d.get("backbone") + d.get("head")):  # from, number, module, args
         m = getattr(torch.nn, m[3:]) if "nn." in m else globals()[m]  # get module
         for j, a in enumerate(args):
             if isinstance(a, str):
@@ -103,10 +105,9 @@ class DetectionModel(BaseModel):
     def __init__(self, cfg="yolov8.yaml", ch=1, nc=None, verbose=True):  # model, input channels, number of classes
         """Initialize the YOLOv8 detection model with the given config and parameters."""
         super().__init__()
-        self.yaml = cfg if isinstance(cfg, dict) else yaml_load(cfg)  # cfg dict
-        # self.yaml = cfg ############ Let me just figure out the dict and use the dict
+        self.yaml = cfg if isinstance(cfg, Union[dict, IterableSimpleNamespace]) else yaml_load(cfg)  # cfg dict
         # Define model
-        ch = self.yaml["ch"] = self.yaml.get("ch", ch)  # input channels
+        ch = self.yaml.get("ch", ch)  # input channels
         # if nc and nc != self.yaml["nc"]:
         #     LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
         #     self.yaml["nc"] = nc  # override YAML value
