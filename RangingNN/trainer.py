@@ -102,7 +102,6 @@ class BaseTrainer:
         trainset (torch.utils.data.Dataset): Training dataset path.
         testset (torch.utils.data.Dataset): Testing dataset path.
         ema (nn.Module): EMA (Exponential Moving Average) of the model.
-        resume (bool): Resume training from a checkpoint.
         lf (nn.Module): Loss function.
         scheduler (torch.optim.lr_scheduler._LRScheduler): Learning rate scheduler.
         best_fitness (float): The best fitness value achieved.
@@ -339,7 +338,8 @@ class BaseTrainer:
                     self.tloss = (
                         (self.tloss * i + self.loss_items) / (i + 1) if self.tloss is not None else self.loss_items
                     )
-
+                # TODO
+                # check the format of self.tloss, make a list of all loss and save for future plot
                 # Backward
                 self.scaler.scale(self.loss).backward()
 

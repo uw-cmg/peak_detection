@@ -11,7 +11,6 @@ from RangingNN.model_utils import non_max_suppression, cw2lh, scale_boxes, lh2cw
 from RangingNN.metrics import box_iou, DetMetrics
 
 
-
 class BaseValidator:
     """
     BaseValidator.

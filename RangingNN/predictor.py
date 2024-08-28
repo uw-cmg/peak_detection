@@ -141,6 +141,7 @@ class DetectionPredictor:
 
     def __call__(self, *args, **kwargs):
         """Performs inference on an image or stream."""
+        self.inputTensor = self.inputTensor.to(self.device)
         self.dataset = LoadTensor(self.inputTensor) # batch size is the first shape of the tensor
         return self.stream_inference()
 
@@ -206,11 +207,13 @@ class DetectionPredictor:
 
     def setup_model(self, modelpath):
         """Initialize YOLO model with given parameters and set it to evaluation mode."""
-        weights = torch.load(modelpath)
-        self.model = DetectionModel()
-        self.model.load(weights)
-        self.model.nc = 1
-        self.model.args = self.args  # attach hyperparameters to model
+        # weights = torch.load(modelpath)
+        # self.model = DetectionModel()
+        # self.model.load(weights)
+        # self.model.nc = 1
+        # self.model.args = self.args  # attach hyperparameters to model
+        self.model = torch.load(modelpath)['ema']
+        self.model = self.model.float()
         self.model = self.model.to(self.args.device)
 
         self.model.device = self.device  # update device

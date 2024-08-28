@@ -36,30 +36,43 @@ class Augmentation:
         all_y = []
         all_ratio = []
         d = apav.load_apt(self.apt_file)
-        ratiolist = np.array(range(10, 20)) * 0.05
+        ratiolist = np.array(range(4, 10)) * 0.1
         slice_rois = []
 
-        for ratio in ratiolist:
-            X, Y, Z = make_coordinate_grids(d.xyz_extents, bin_width=d.dimensions * (ratio ** (1 / 3)))
+        for ratio_of_extent in ratiolist:
+            how_many = 2
+            X_range = [d.xyz_extents[0][0] * (1 - ratio_of_extent),
+                       d.xyz_extents[0][1] * (1 - ratio_of_extent)]
+            X_numbers = [it * 0.01 * (X_range[1] - X_range[0]) + X_range[0] for it in
+                         random.sample(range(100), how_many)]  # non-repeat numbers within the range
+            Y_range = [d.xyz_extents[1][0] * (1 - ratio_of_extent),
+                       d.xyz_extents[1][1] * (1 - ratio_of_extent)]
+            Y_numbers = [it * 0.01 * (Y_range[1] - Y_range[0]) + X_range[0] for it in
+                         random.sample(range(100), how_many)]  # non-repeat numbers within the range
+            Z_range = [d.xyz_extents[2][0] * (1 - ratio_of_extent),
+                       d.xyz_extents[2][1] * (1 - ratio_of_extent)]
+            Z_numbers = [it * 0.01 * (Z_range[1] - Z_range[0]) + X_range[0] for it in
+                         random.sample(range(100), how_many)]  # non-repeat numbers within the range
 
-            for (i, j, l) in itertools.product(range(X.shape[0] - 1), range(X.shape[1] - 1), range(X.shape[2] - 1)):
-                width = d.dimensions * ratio * 0.5
-                slice_rois.append(
-                    RoiRectPrism(d, (X[i, 0, 0] + width[0], Y[0, j, 0] + width[1], Z[0, 0, l] + width[2]), width))
-                all_ratio.append(ratio)
+            slice_rois = []
+            for (i, j, l) in itertools.product(X_numbers, Y_numbers, Z_numbers):
+                width = d.dimensions * ratio_of_extent
+                slice_rois.append(RoiRectPrism(d, (i, j, l), width))
+                all_ratio.append(ratio_of_extent)
 
+        # for full volume
         slice_rois.append(d)
         all_ratio.append(1)
 
         all_ratio_ = []
         for i, slice in enumerate(slice_rois):
             x, y = slice.mass_histogram(bin_width=self.bin_width, lower=0, upper=307.2, multiplicity='all', norm=False, )
-            y = np.log(y + 1)
+            # y_log = np.log(y + 1) # leave the log for later
             if y.max() > 1:
                 all_y.append(y)
                 all_ratio_.append(all_ratio[i])
 
-        return np.asarray(all_y).T
+        return  np.asarray(all_y).T
 
     def load_ranging(self):
         """
@@ -128,6 +141,7 @@ class Augmentation:
         spectrum_voxels = self.load_voxel_spectrum()
         rrs, ions = self.load_ranging()
         spectrum_o_all =[]
+        spectrum_log_all = []
         range_o_all = []
         for v in range(spectrum_voxels.shape[-1]):
             da_insert = np.random.random_sample((self.expand_factor,))
@@ -135,18 +149,24 @@ class Augmentation:
             da_insert = da_insert * (top - self.shift_range[0]) + self.shift_range[0]
             for k, it in enumerate(da_insert):
                 spectrum_o, range_o = self.apply_peakshift(spectrum_voxels[:, v], rrs, da_insert=it)
+                spectrum_log = np.log(spectrum_o+1)
                 if self.norm:
-                    spectrum_o, range_o = self.normalize(spectrum_o, range_o)
+                    # apply norm for the log spectrum for yolo-1d
+                    spectrum_log, range_o = self.normalize(spectrum_log, range_o)
                 spectrum_o_all.append(spectrum_o)
+                spectrum_log_all.append(spectrum_log)
                 range_o_all.append(range_o)
         spectrum_o_all = np.stack(spectrum_o_all, dtype='float32')
+        spectrum_log_all = np.stack(spectrum_log_all, dtype='float32')
         range_o_all = np.stack(range_o_all, dtype='float32')
         print("Augmentation finished for", Path(self.apt_file).stem)
         with h5py.File(self.savepath + Path(self.apt_file).stem + '.h5', 'w') as f:
             dt = h5py.special_dtype(vlen=str)
             f.create_dataset('ion', data=np.array(ions,dtype=object), dtype=dt)
-            f.create_dataset('if_norm', data=np.array(True))
+            f.create_dataset('if_norm', data=np.array(self.norm))
             f.create_dataset('if_peak_shift', data=np.array(True))
-            f.create_dataset('input', data=spectrum_o_all)
+            f.create_dataset('input', data=spectrum_log_all)
             f.create_dataset('label', data=range_o_all)
+            f.create_dataset('non_log_spectrums', data=spectrum_o_all)
+
         print("h5 file writting finished")
