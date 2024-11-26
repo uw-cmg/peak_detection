@@ -1,0 +1,9 @@
+device: cpu # (int | str | list, optional) device to run on, i.e. cuda device=0 or device=0,1,2,3 or device=cpu
+verbose: true
+freeze: None
+save: False
+conf: 0.1 # <0.1, >0.5 is bad
+iou: 0.1 # higher means get less
+max_det: 1000
+half: false
+single_cls: true

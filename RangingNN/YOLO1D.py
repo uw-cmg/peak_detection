@@ -118,8 +118,8 @@ class DetectionModel(BaseModel):
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
-            s = 256  # 2x min stride
-            m.inplace = self.inplace
+            s = 256  # original 256. 2x min stride
+            m.inplace = self.inplace # not used
             forward = lambda x: self.forward(x)
             # (1, ch, s, s) changed to (1, ch, s)
             m.stride = torch.tensor([s / x.shape[-1] for x in forward(torch.zeros(1, ch, s))])  # forward changed to -1

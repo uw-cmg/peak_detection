@@ -5,7 +5,7 @@ mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmar
 save_dir: D:/APT_DATA/train_result
 # Train settings -------------------------------------------------------------------------------------------------------
 model: G:/pycharm/apt/RangingNN/cfg/yolov8.yaml # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
-data: D:/APT_DATA/hdf5s/ # (str, optional) path to data file, i.e. coco8.yaml
+data: D:/APT_DATA/hdf5s_old/ # (str, optional) path to data file, i.e. coco8.yaml
 epochs: 1 # (int) number of epochs to train for
 time: 0 # 24 # (float, optional) number of hours to train for, overrides epochs if supplied
 patience: 20 # (int) epochs to wait for no observable improvement for early stopping of training

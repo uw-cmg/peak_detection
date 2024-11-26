@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 # from distutils.core import setup
 
 setup(
-    name='peak_detection',
+    name='RangingNN', # change to peak_detection once I have other packages
     # version='0.1.0',
     packages=find_packages(),
     url='https://github.com/wdwzyyg/peak_detection.git',
@@ -21,3 +21,16 @@ setup(
     ],
 
 )
+# peak_detection/
+# ├── setup.py
+# ├── peak_detection/
+# │   ├── __init__.py
+# │   └── RangingNN/
+# │       ├── __init__.py
+# │       └── ... (other files)
+# from peak_detection.RangingNN import ...
+# setup(
+#     name='peak_detection',
+#     packages=['RangingNN'],  # Explicitly list the package
+#     url='https://github.com/wdwzyyg/peak_detection.git',
+# )

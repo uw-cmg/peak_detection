@@ -345,6 +345,7 @@ class Detect(nn.Module):
             return x
 
         # Inference path
+        # the shape related things no longer matters here
         shape = x[0].shape  # BCHW
         x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
         if self.dynamic or self.shape != shape:
@@ -370,6 +371,7 @@ class Detect(nn.Module):
         dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
         y = torch.cat((dbox, cls.sigmoid()), 1)
+        np.save('G:/pycharm/apt/RangingNN/cfg/test.npy', np.array(y.numpy()),)
         return y if self.export else (y, x)
 
     def bias_init(self):

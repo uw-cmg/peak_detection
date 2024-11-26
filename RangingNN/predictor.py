@@ -37,7 +37,7 @@ class LoadTensor:
         """Validate and format an image to torch.Tensor."""
         s = (
             f"WARNING ⚠️ torch.Tensor inputs should be BCH i.e. shape(batch, 1, 30720) "
-            f"divisible by stride {stride}. Input shape{tuple(im.shape)} is incompatible.Added one extra channel dimention"
+            f"divisible by stride {stride}. Input shape{tuple(im.shape)} is incompatible.Added one extra channel dimension"
         )
         s2 = (
             f"WARNING ⚠️ The model was trained on spectrum with bin = 0.01 da and range 307.2 da"
@@ -212,7 +212,10 @@ class DetectionPredictor:
         # self.model.load(weights)
         # self.model.nc = 1
         # self.model.args = self.args  # attach hyperparameters to model
-        self.model = torch.load(modelpath)['ema']
+        if self.args.device == 'cpu':
+            self.model = torch.load(modelpath, map_location = torch.device('cpu'))['ema']
+        else:
+            self.model = torch.load(modelpath)['ema']
         self.model = self.model.float()
         self.model = self.model.to(self.args.device)
 
