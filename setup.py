@@ -3,9 +3,15 @@ from setuptools import setup, find_packages
 # from distutils.core import setup
 
 setup(
-    name='RangingNN', # change to peak_detection once I have other packages
+    name='peak_detection', # change to peak_detection once I have other packages
     # version='0.1.0',
+    # packages=['RangingNN', 'Ionclassifier'],
     packages=find_packages(),
+    include_package_data=True,
+    package_data={
+        # If you have non-Python files, specify them here:
+        '': ['*.yaml', '*.pt', '*.csv']
+    },
     url='https://github.com/wdwzyyg/peak_detection.git',
     license='MIT',
     author='Jingrui Wei',
@@ -18,9 +24,11 @@ setup(
         "numpy>=1.24.1",
         "matplotlib",
         "scikit-image",
+        "apav==1.4.0"
     ],
 
 )
+
 # peak_detection/
 # ├── setup.py
 # ├── peak_detection/
@@ -28,7 +36,6 @@ setup(
 # │   └── RangingNN/
 # │       ├── __init__.py
 # │       └── ... (other files)
-# from peak_detection.RangingNN import ...
 # setup(
 #     name='peak_detection',
 #     packages=['RangingNN'],  # Explicitly list the package
