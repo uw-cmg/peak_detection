@@ -24,7 +24,8 @@ setup(
         "numpy>=1.24.1",
         "matplotlib",
         "scikit-image",
-        "apav==1.4.0"
+        "apav==1.4.0",
+        "h5py",
     ],
 
 )
