@@ -5,8 +5,8 @@ from setuptools import setup, find_packages
 setup(
     name='peak_detection', # change to peak_detection once I have other packages
     # version='0.1.0',
-    # packages=['RangingNN', 'Ionclassifier'],
-    packages=find_packages(),
+    packages=['RangingNN', 'Ionclassifier'],
+    # packages=find_packages(),
     include_package_data=True,
     package_data={
         # If you have non-Python files, specify them here:
@@ -26,6 +26,7 @@ setup(
         "scikit-image",
         "apav==1.4.0",
         "h5py",
+        "pandas",
     ],
 
 )
