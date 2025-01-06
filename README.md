@@ -1,8 +1,9 @@
 # peak_detection
 For APT spectrum peak ranging and identification
 
-## RangingNN
-This module contains a supervised YOLO-based model for ranging the APT M/C specturm. It was trained on expert labeled datasets. 
+Module RangingNN contains a supervised YOLO-based model for ranging the APT M/C specturm. It was trained on expert labeled datasets. 
+
+Module Ionclassifier contains a supervised Recurrent CNN model for identify the ion species of peaks. It was trained on synthetic datasets. 
 
 ### Installation 
 ---
@@ -12,4 +13,7 @@ pip install git+https://github.com/wdwzyyg/peak_detection.git
 
 ### Usage 
 ---
-See the ./RangingNN/ExampleInference jupyter notebook for implementation details
+#### Using the RangingNN model
+
+Check out [ExampleInference jupyter notebook](peak_detection/RangingNN/notebooks/ExampleInference.ipynb) for implementation details.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wdwzyyg/peak_detection/blob/master/peak_detection/RangingNN/notebooks/ExampleInference.ipynb)
