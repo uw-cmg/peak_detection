@@ -3,11 +3,12 @@ from torch import nn
 import torch.nn.functional as F
 
 class IonRNN(nn.Module):
-    def __init__(self, input_size=2, hidden_size=256, num_layers=3, num_classes=118):
+    def __init__(self, input_size=2, hidden_size=256, num_layers=3, num_classes=118, dropout = 0.3):
         super(IonRNN, self).__init__()
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.dropout = dropout
 
         # RNN layers
         self.rnn = nn.LSTM(
@@ -28,7 +29,7 @@ class IonRNN(nn.Module):
         self.bn1 = nn.BatchNorm1d(hidden_size)
         self.fc2 = nn.Linear(hidden_size, num_classes)
 
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(self.dropout)
 
     def forward(self, x):
         # Initialize hidden state

@@ -1,0 +1,38 @@
+# Default training settings and hyperparameters for IonRNN training
+
+# Train settings -------------------------------------------------------------------------------------------------------
+save_path:
+data_path:
+device: cpu # (int | str | list, optional) device to run on, i.e. cuda device=0 or device=0,1,2,3 or device=cpu
+patience: 100 # (int) epochs to wait for no observable improvement for early stopping of training
+subset: 1.0
+normalize_c: True
+batchsize: 8 # (int) number of images per batch (-1 for AutoBatch)
+epochs: 100 # (int) number of epochs to train for
+print_freq: 20
+nbs: 64 # (int) nominal batch size
+weight_decay: 0.0005 # (float) optimizer weight decay 5e-4
+lr0: 0.01 # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
+lrf: 0.01 # (float) final learning rate (lr0 * lrf)
+momentum: 0.937 # (float) SGD momentum/Adam beta1
+warmup_epochs: 3.0 # (float) warmup epochs (fractions ok)
+warmup_momentum: 0.8 # (float) warmup initial momentum
+warmup_bias_lr: 0.1 # (float) warmup initial bias lr
+amp: False # (bool) Automatic Mixed Precision (AMP) training, choices=[True, False], True runs AMP check
+cos_lr: False # (bool) use cosine learning rate scheduler
+deterministic: True # (bool) whether to enable deterministic mode
+seed: 0
+
+# Hyperparameters ------------------------------------------------------------------------------------------------------
+input_size: 2
+hidden_size: 256
+num_layers: 3
+num_classes: 118
+loss_alpha: 1
+loss_gamma: 2
+dropout: 0.2 # (float) use dropout regularization (classify train only)
+
+
+
+
+
