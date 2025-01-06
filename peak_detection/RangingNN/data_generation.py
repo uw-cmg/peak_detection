@@ -1,5 +1,4 @@
 from apav import RoiRectPrism
-from apav.analysis.spatial import make_coordinate_grids
 import itertools
 import random
 from copy import deepcopy
@@ -14,7 +13,6 @@ from pathlib import Path
 class Augmentation:
     """
     read the raw source files, apply augmentation, and save as h5 files
-    expand_factor:
     remove_thin: whether remove the original ranges that are thinner that the bin_width, here 0.01da chosen
     """
 
