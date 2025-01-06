@@ -18,7 +18,7 @@ momentum: 0.937 # (float) SGD momentum/Adam beta1
 warmup_epochs: 3.0 # (float) warmup epochs (fractions ok)
 warmup_momentum: 0.8 # (float) warmup initial momentum
 warmup_bias_lr: 0.1 # (float) warmup initial bias lr
-amp: False # (bool) Automatic Mixed Precision (AMP) training, choices=[True, False], True runs AMP check
+amp: True # (bool) Automatic Mixed Precision (AMP) training, choices=[True, False], True runs AMP check
 cos_lr: False # (bool) use cosine learning rate scheduler
 deterministic: True # (bool) whether to enable deterministic mode
 seed: 0

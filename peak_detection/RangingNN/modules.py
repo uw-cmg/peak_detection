@@ -371,7 +371,7 @@ class Detect(nn.Module):
         dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
         y = torch.cat((dbox, cls.sigmoid()), 1)
-        np.save('G:/pycharm/apt/RangingNN/cfg/test.npy', np.array(y.numpy()),)
+        # np.save('G:/pycharm/apt/RangingNN/cfg/test.npy', np.array(y.numpy()),)
         return y if self.export else (y, x)
 
     def bias_init(self):
