@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
 
 class IonRNN(nn.Module):
     def __init__(self, input_size=2, hidden_size=256, num_layers=3, num_classes=118, dropout = 0.3):
@@ -31,13 +33,14 @@ class IonRNN(nn.Module):
 
         self.dropout = nn.Dropout(self.dropout)
 
-    def forward(self, x):
-        # Initialize hidden state
-        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
-        c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
+    def forward(self, x, lengths):
+
+        packed = pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
 
         # Forward propagate RNN
-        out, _ = self.rnn(x, (h0, c0))
+        out, _ = self.rnn(packed)
+        # Unpack the sequence
+        output, _ = pad_packed_sequence(out, batch_first=True)
 
         # Apply attention
         out = out.permute(1, 0, 2)  # Change shape for attention
@@ -83,7 +86,7 @@ def train_model(model, train_loader, criterion, optimizer, device, num_epochs, s
 
             # Mixed precision training
             with torch.cuda.amp.autocast():
-                outputs = model(batch_spectra)
+                outputs = model(batch_spectra, batch_lengths)
                 loss = criterion(outputs.view(-1, outputs.shape[-1]), batch_labels.view(-1))
 
             # Backward and optimize

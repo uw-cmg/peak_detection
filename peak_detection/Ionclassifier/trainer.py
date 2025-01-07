@@ -22,6 +22,17 @@ def one_cycle(y1=0.0, y2=1.0, steps=100):
     """Returns a lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf."""
     return lambda x: max((1 - math.cos(x * math.pi / steps)) / 2, 0) * (y2 - y1) + y1
 
+def collate_fn(batch):
+    # Sort batch by sequence length (descending)
+    batch.sort(key=lambda x: len(x), reverse=True)
+
+    # Get lengths of each sequence
+    lengths = [len(seq) for seq in batch]
+
+    # Pad sequences
+    padded_seqs = torch.nn.utils.rnn.pad_sequence(batch, batch_first=True)
+
+    return padded_seqs, lengths
 
 class BaseTrainer:
     """
@@ -54,8 +65,6 @@ class BaseTrainer:
         self.subset = self.pms.subset
         if not os.path.exists(self.save_path):
             os.mkdir(self.save_path)
-        with open(self.save_path + 'hyperdict.json', 'w') as fp:
-            json.dump(hyperdict, fp)
 
     def train(self):
 
@@ -81,7 +90,7 @@ class BaseTrainer:
 
         # Initialize dataset
         dataset = Dataset(data_dir=self.data_path, filestart=0, normalize_c=self.pms.normalize_c,
-                          subset = self.pms.subset, label_encoder=None)
+                          subset = self.pms.subset)
 
         # print("The input data shape is ", dataset.data_shape())
 
@@ -95,11 +104,11 @@ class BaseTrainer:
         # define training and validation data loaders
         self.d_train = torch.utils.data.DataLoader(
             dataset_train, batch_size=self.pms.batchsize, shuffle=True, pin_memory=True,
-            num_workers=int(pool._processes / 2))
+            num_workers=int(pool._processes / 2), collate_fn=collate_fn)
 
         self.d_test = torch.utils.data.DataLoader(
             dataset_test, batch_size=self.pms.batchsize, shuffle=True, pin_memory=True,
-            num_workers=int(pool._processes / 2))
+            num_workers=int(pool._processes / 2), collate_fn=collate_fn)
 
         print('##############################START TRAINING ######################################')
 
@@ -108,7 +117,7 @@ class BaseTrainer:
         self.optimizer.zero_grad()
         self.train_cell(self.d_train, self.d_test)
         torch.save({"date": datetime.now().isoformat(),'ema': deepcopy(self.ema.ema), 'state_dict': self.model.state_dict(),
-                    'train': self.trainloss_total, 'test': self.testloss_total}, self.save_path + 'model_final.tar')
+                    'train': self.trainloss_total, 'test': self.testloss_total}, self.save_path + '/model_final.tar')
 
         plot_losses(self.trainloss_total, self.testloss_total, self.save_path)
 
@@ -136,8 +145,9 @@ class BaseTrainer:
             self.model.train()  # turn on train mode!
 
             self.optimizer.zero_grad() # YOU HAVE TO KEEP THIS. Do not remove
-
-            inputs_train = inputs_train.to(self.device)
+            (input_train, lengths_train) = inputs_train
+            input_train = input_train.to(self.device)
+            lengths_train = lengths_train.to(self.device)
             targets_train= targets_train.to(self.device)
 
             # Warmup
@@ -155,7 +165,7 @@ class BaseTrainer:
 
             # Forward
             with torch.cuda.amp.autocast(self.pms.amp):
-                pred = self.model(inputs_train)
+                pred = self.model(input_train, lengths_train)
                 lossfunc = WeightedFocalLoss(alpha = self.pms.loss_alpha , gamma = self.pms.loss_gamma)
                 trainloss = lossfunc(pred, targets_train)
 
@@ -184,13 +194,14 @@ class BaseTrainer:
             ##########################################################################
             ###Test###
 
-            inputs_test = inputs_test.to(self.device)
-
+            (input_test, lengths_test) = inputs_train
+            input_test = input_test.to(self.device)
+            lengths_test = lengths_test.to(self.device)
             targets = targets_test.to(self.device)
             self.model.eval()
             with torch.no_grad():
 
-                pred = self.model(inputs_test)
+                pred = self.model(input_test, lengths_test)
 
                 testloss = lossfunc(pred, targets)
 
@@ -214,7 +225,7 @@ class BaseTrainer:
                         {'ema': deepcopy(self.ema.ema),'state_dict': self.model.state_dict(),
                          'epoch': self.stopper.best_epoch,"date": datetime.now().isoformat(),
                          "loss_alpha": self.pms.loss_alpha, "loss_beta": self.pms.loss_gamma},
-                        self.save_path + 'model_bestepoch.tar')
+                        self.save_path + '/model_bestepoch.tar')
             else:
                 break
 
@@ -300,5 +311,7 @@ class BaseTrainer:
         self.optimizer.zero_grad()
         if self.ema:
             self.ema.update(self.model)
+
+
 
 

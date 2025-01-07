@@ -21,18 +21,23 @@ CHEMICAL_ELEMENTS = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na',
                      'No', 'Lr', 'Rf', 'Db', 'Sg', 'Bh', 'Hs', 'Mt', 'Ds', 'Rg', 'Cn',
                      'Nh', 'Fl', 'Mc', 'Lv', 'Ts', 'Og']
 
+le = LabelEncoder()
+le.fit(CHEMICAL_ELEMENTS)
 
 class Dataset:
     """
     :argument
+    threshold_c: filter out the peaks with very low relative counts (normalized by the maximum counts),
     """
 
-    def __init__(self, data_dir, filestart=0, normalize_c=True, subset = 1, label_encoder=None,**kwargs):
+
+    def __init__(self, data_dir, filestart=0, normalize_c=True, subset = 1, label_encoder=le,threshold_c=1e-7, **kwargs):
 
 
         self.data_dir = data_dir
         self.subset = subset
         self.normalize_c = normalize_c
+        self.threshold_c = threshold_c
         filenum = len(os.listdir(data_dir))
         datalist = sorted(os.listdir(data_dir))[filestart:filestart + filenum]
         if self.subset < 1:
@@ -44,7 +49,7 @@ class Dataset:
 
     def __getitem__(self, i):
         img_id = self.ids[i]  # folder names
-        file = pd.read_csv(self.data_dir + img_id + '.csv')  ###########
+        file = pd.read_csv(self.data_dir + img_id)  ###########
         mc = file.get(['mc']).to_numpy().squeeze()
         counts = file.get(['counts']).to_numpy().squeeze()
         target = {'ion': file.get(['ion']).to_numpy().squeeze(), 'charge': file.get(['charge']).to_numpy().squeeze(),
@@ -53,7 +58,6 @@ class Dataset:
         if self.normalize_c:
             counts = ( counts - counts.min() ) / (counts.max() - counts.min() )
         labels = np.array([re.findall('.[^A-Z]*', it)[0] for it in target['ion']]) # Not including the light elements in mole here
-        labels = torch.as_tensor(labels)
         # Initialize label encoder if not provided
         if self.label_encoder is None:
             self.label_encoder = LabelEncoder()
@@ -64,8 +68,9 @@ class Dataset:
 
         mc = torch.as_tensor(mc)
         counts = torch.as_tensor(counts)
-
-        return (mc, counts), encoded_labels
+        encoded_labels = torch.as_tensor(encoded_labels)
+        indexes = counts > self.threshold_c
+        return (mc[indexes], counts[indexes]), encoded_labels[indexes]
 
     def __len__(self):
         return len(self.ids)
