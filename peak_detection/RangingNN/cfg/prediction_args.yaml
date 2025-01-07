@@ -2,7 +2,7 @@ device: cpu # (int | str | list, optional) device to run on, i.e. cuda device=0 
 verbose: true
 freeze: None
 save: False
-conf: 0.002 #
+conf: 0.02 #
 iou: 0.01 # higher means get more
 max_det: 2000
 half: false

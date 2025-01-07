@@ -133,7 +133,8 @@ class BaseTrainer:
         last_opt_step = -1
 
         record = time.time()
-
+        correct = 0
+        total = 0
         # note: I will still keep the iteration loop and no real epoch loop
         for i, ((inputs_train, targets_train), (inputs_test, targets_test)) in enumerate(
                 zip(data_loader_train, data_loader_test)):
@@ -166,10 +167,15 @@ class BaseTrainer:
             # Forward
             with torch.cuda.amp.autocast(self.pms.amp):
                 pred = self.model(input_train, lengths_train)
+
+                # Calculate loss only on valid sequence parts
+                mask = torch.arange(pred.size(1)).expand(len(lengths_train), pred.size(1)) < torch.tensor(lengths_train).unsqueeze(1)
+                mask = mask.to(pred.device)
                 lossfunc = WeightedFocalLoss(alpha = self.pms.loss_alpha , gamma = self.pms.loss_gamma)
-                trainloss = lossfunc(pred, targets_train)
+                trainloss = lossfunc(pred[mask], targets_train[mask])
 
                 self.trainloss_total.append(trainloss.item())
+
 
             # Backward
             self.scaler.scale(trainloss).backward() #######################
@@ -191,6 +197,8 @@ class BaseTrainer:
                         if (p.grad > 1e5).any() or (p.grad < 1e-5).any():
                             print('===========\ngradient:{}\n----------\n{}'.format(n, p.grad))
                             break
+
+
             ##########################################################################
             ###Test###
 
@@ -231,6 +239,8 @@ class BaseTrainer:
 
             if i == (self.pms.epochs - 1):
                 break
+
+
 
         # at finish
         self.lr = {f"lr/pg{ir}": x["lr"] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers
