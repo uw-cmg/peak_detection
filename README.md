@@ -1,4 +1,4 @@
-#peak_detection
+# peak_detection
 For APT spectrum peak ranging and identification
 
 Module RangingNN contains a supervised YOLO-based model for ranging the APT M/C specturm. It was trained on expert labeled datasets. 
@@ -12,9 +12,9 @@ At the in-development stage, please install the package from the github source c
 
 pip install git+https://github.com/wdwzyyg/peak_detection.git
 
-Python version 3.10 is recommended. Older python version may does not support the pytorch version used here, and newer version has not been tested. 
+Python version 3.10 is recommended. Older python version may not support the pytorch version used here, and newer version has not been tested. 
 You can create an independent python environment by running the command:
-```python
+```
 conda create -n name_of_environment python=3.10.0
 conda activate name_of_environment
 pip install git+https://github.com/wdwzyyg/peak_detection.git
