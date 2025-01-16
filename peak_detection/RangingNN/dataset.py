@@ -11,7 +11,7 @@ import glob
 from skimage.transform import rescale
 import hashlib
 from multiprocessing.pool import ThreadPool
-import psutil
+# import psutil
 from typing import Optional
 import h5py
 
@@ -254,7 +254,7 @@ class BaseDataset(Dataset):
 
             sp = rescale(sp, (1, self.spectrumsz / sz0)) # keep the channel dimention not rescaled
 
-        return torch.tensor(sp), sz0, sp.shape[1]
+        return torch.as_tensor(sp, dtype=torch.float32), sz0, sp.shape[1]
 
     def get_labels(self):
         """Returns dictionary of labels for training."""
@@ -285,7 +285,7 @@ class BaseDataset(Dataset):
                                 "dataset_key": k,
                                 "batch_idx": torch.zeros((1, single.shape[0])),  # number of instance zeros
                                 "cls": torch.zeros(single[:, 0:1].shape),  # 0 is single class
-                                "bboxes": torch.tensor(single),  # n, 2
+                                "bboxes": torch.as_tensor(single, dtype=torch.float32),  # n, 2
                                 "normalized": True,
                                 "bbox_format": "center_width",
                             }

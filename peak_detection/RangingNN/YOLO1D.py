@@ -114,6 +114,8 @@ class DetectionModel(BaseModel):
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
         self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
         self.inplace = self.yaml.get("inplace", True)
+        self.DIoU = self.yaml.get("DIoU", True)
+        self.low_end_weight = self.yaml.get("low_end_weight", 1.0)
 
         # Build strides
         m = self.model[-1]  # Detect()
@@ -158,4 +160,4 @@ class DetectionModel(BaseModel):
 
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
-        return v8DetectionLoss(self)
+        return v8DetectionLoss(self, DIoU=self.DIoU, low_end_weight=self.low_end_weight)

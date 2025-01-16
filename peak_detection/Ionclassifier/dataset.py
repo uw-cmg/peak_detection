@@ -68,7 +68,7 @@ class Dataset:
 
         mc = torch.as_tensor(mc)
         counts = torch.as_tensor(counts)
-        encoded_labels = torch.as_tensor(encoded_labels)
+        encoded_labels = torch.as_tensor(encoded_labels, dtype=torch.int64)
         indexes = counts > self.threshold_c
         return (mc[indexes], counts[indexes]), encoded_labels[indexes]
 

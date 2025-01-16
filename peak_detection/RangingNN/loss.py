@@ -56,22 +56,26 @@ def bbox_iou(box1, box2, cw=True, GIoU=False, DIoU=False, eps=1e-7):
 class BboxLoss(nn.Module):
     """Criterion class for computing training losses during training."""
 
-    def __init__(self, reg_max, use_dfl=False):
+    def __init__(self, reg_max, use_dfl=False, low_end_weight=1.0, DIoU=False):
         """Initialize the BboxLoss module with regularization maximum and DFL settings."""
         super().__init__()
         self.reg_max = reg_max
         self.use_dfl = use_dfl
+        self.low_end_weight = low_end_weight
+        self.DIoU = DIoU
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], cw=False, DIoU=True)
+        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], cw=False, DIoU=self.DIoU)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
         if self.use_dfl:
             target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max)
-            loss_dfl = self._df_loss(pred_dist[fg_mask].view(-1, self.reg_max + 1), target_ltrb[fg_mask]) * weight
+
+            loss_dfl = self._df_loss(pred_dist[fg_mask].view(-1, self.reg_max + 1), target_ltrb[fg_mask],
+                                     low_end_weight=self.low_end_weight) * weight
             loss_dfl = loss_dfl.sum() / target_scores_sum
         else:
             loss_dfl = torch.tensor(0.0).to(pred_dist.device)
@@ -79,22 +83,25 @@ class BboxLoss(nn.Module):
         return loss_iou, loss_dfl
 
     @staticmethod
-    def _df_loss(pred_dist, target):
+    def _df_loss(pred_dist, target, low_end_weight=1.0):
         """
         Return sum of left and right DFL losses.
+        This weighted combination helps the model learn the continuous nature of the target
 
         Distribution Focal Loss (DFL) proposed in Generalized Focal Loss
         https://ieeexplore.ieee.org/document/9792391
         """
-        tl = target.long()  # target left
-        tr = tl + 1  # target right
+        tl = target.long()  # target left, floor value
+        tr = tl + 1  # target right, ceiling value
         wl = tr - target  # weight left
         wr = 1 - wl  # weight right
         return (
-                F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape) * wl
+                F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape)
+                * wl * torch.as_tensor((low_end_weight, 1))
                 + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
+                * torch.as_tensor((low_end_weight, 1))
         ).mean(-1, keepdim=True)
-
+        # view(tl.shape) (N, 2) for
 
 class TaskAlignedAssigner(nn.Module):
     """
@@ -347,7 +354,7 @@ class TaskAlignedAssigner(nn.Module):
 class v8DetectionLoss:
     """Criterion class for computing training losses."""
 
-    def __init__(self, model):  # model must be de-paralleled
+    def __init__(self, model, DIoU, low_end_weight):  # model must be de-paralleled
         """Initializes v8DetectionLoss with the model, defining model-related properties and BCE loss function."""
         device = next(model.parameters()).device  # get model device
         h = model.args  # hyperparameters
@@ -362,9 +369,13 @@ class v8DetectionLoss:
         self.device = device
 
         self.use_dfl = m.reg_max > 1
-
+        self.low_end_weight = low_end_weight
+        self.DIoU = DIoU
         self.assigner = TaskAlignedAssigner(topk=10, num_classes=self.nc, alpha=0.5, beta=6.0)
-        self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
+        self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl,
+                                  low_end_weight=self.low_end_weight, DIoU=self.DIoU).to(device)
+        print('For Bbox loss, Now using: low_end_weight', self.low_end_weight,
+              'DIoU:', self.DIoU)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
 
     def preprocess(self, targets, batch_size, scale_tensor):
