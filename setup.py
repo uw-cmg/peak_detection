@@ -24,9 +24,11 @@ setup(
         "numpy>=1.24.1",
         "matplotlib",
         "scikit-image",
+        "scikit-learn==1.6.1"
         "apav==1.4.0",
         "h5py",
         "pandas",
+        "tqdm",
     ],
 
 )
