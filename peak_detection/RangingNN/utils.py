@@ -380,12 +380,12 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
     return model, ckpt
 
 
-def strip_optimizer(f: Union[str, Path] = "best.pt", s: str = "") -> None:
+def strip_optimizer(f: Union[str, Path] = "best_v0.pt", s: str = "") -> None:
     """
     Strip optimizer from 'f' to finalize training, optionally save as 's'.
 
     Args:
-        f (str): file path to model to strip the optimizer from. Default is 'best.pt'.
+        f (str): file path to model to strip the optimizer from. Default is 'best_v0.pt'.
         s (str): file path to save the model with stripped optimizer to. If not provided, 'f' will be overwritten.
 
     Returns:
@@ -462,7 +462,7 @@ class EarlyStopping:
             prefix = "EarlyStopping: "
             LOGGER.info(
                 f"{prefix}Training stopped early as no improvement observed in last {self.patience} epochs. "
-                f"Best results observed at epoch {self.best_epoch}, best model saved as best.pt.\n"
+                f"Best results observed at epoch {self.best_epoch}, best model saved as best_v0.pt.\n"
                 f"To update EarlyStopping(patience={self.patience}) pass a new patience value, "
                 f"i.e. `patience=300` or use `patience=0` to disable EarlyStopping."
             )

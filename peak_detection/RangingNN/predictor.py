@@ -98,7 +98,7 @@ class DetectionPredictor:
         from RangingNN.predictor import DetectionPredictor
         with h5py.File(file, "r") as f:
             sp = torch.tensor(f['input'], dtype=torch.float32)[1:4]
-        modelpath = "D:/APT_DATA/train_result/weights/best.pt"
+        modelpath = "D:/APT_DATA/train_result/weights/best_v0.pt"
         predictor = DetectionPredictor(modelpath, sp, save_dir = 'D:/APT_DATA/train_result', cfg = 'D:/APT_DATA/train_result/prediction_args.yaml')
         out = predictor()
     """

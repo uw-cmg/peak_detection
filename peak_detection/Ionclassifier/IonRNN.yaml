@@ -2,7 +2,7 @@
 
 # Train settings -------------------------------------------------------------------------------------------------------
 save_path: C:/Users/jingr/PycharmProjects/peak_detection/peak_detection/Ionclassifier/
-data_path: C:/Users/jingr/OneDrive/Documents/APTML/
+data_path: ['C:/Users/jingr/OneDrive/Documents/APTML/testdata/',]
 device: cpu # (int | str | list, optional) device to run on, i.e. cuda device=0 or device=0,1,2,3 or device=cpu
 patience: 100 # (int) epochs to wait for no observable improvement for early stopping of training
 subset: 1.0

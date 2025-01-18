@@ -125,7 +125,6 @@ class BaseTrainer:
 
         return self.model
 
-
     def train_cell(self, data_loader_train, data_loader_test, check_gradient=True, regularization=False):
         """
         """
@@ -138,7 +137,7 @@ class BaseTrainer:
         correct = 0
         total = 0
         # note: I will still keep the iteration loop and no real epoch loop
-        for i, ((inputs_train, targets_train), (inputs_test, targets_test)) in enumerate(
+        for i, ((train, lengths_train), (test, lengths_test)) in enumerate(
                 zip(data_loader_train, data_loader_test)):
 
             with warnings.catch_warnings():
@@ -147,11 +146,13 @@ class BaseTrainer:
 
             self.model.train()  # turn on train mode!
 
-            self.optimizer.zero_grad() # YOU HAVE TO KEEP THIS. Do not remove
-            (input_train, lengths_train) = inputs_train
+            self.optimizer.zero_grad()# YOU HAVE TO KEEP THIS. Do not remove
+            input_train = train[:, :, :2]
             input_train = input_train.to(self.device)
-            lengths_train = lengths_train.to(self.device)
-            targets_train= targets_train.to(self.device)
+            lengths_train = torch.as_tensor(lengths_train).to(self.device)
+
+            targets_train = train[:, :, 2]
+            targets_train = targets_train.to(self.device)
 
             # Warmup
             # ni = i + nb * epoch
@@ -203,21 +204,21 @@ class BaseTrainer:
 
             ##########################################################################
             ###Test###
-
-            (input_test, lengths_test) = inputs_train
+            input_test = test[:, :, :2]
             input_test = input_test.to(self.device)
-            lengths_test = lengths_test.to(self.device)
-            targets = targets_test.to(self.device)
+            lengths_test = torch.as_tensor(lengths_test).to(self.device)
+            targets_test = test[:, :, 2]
+            targets_test = targets_test.to(self.device)
             self.model.eval()
             with torch.no_grad():
 
                 pred = self.model(input_test, lengths_test)
 
-                testloss = lossfunc(pred, targets)
+                testloss = lossfunc(pred, targets_test)
 
             self.testloss_total.append(testloss.item())
 
-            del inputs_train, inputs_test, targets  # manually release GPU memory during training loop.
+            del train, test  # manually release GPU memory during training loop.
 
             if i % self.pms.print_freq == 0:
                 print("Epoch{}\t".format(i), "Train Loss data {:.3f}".format(trainloss.item()))
@@ -241,8 +242,6 @@ class BaseTrainer:
 
             if i == (self.pms.epochs - 1):
                 break
-
-
 
         # at finish
         self.lr = {f"lr/pg{ir}": x["lr"] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers

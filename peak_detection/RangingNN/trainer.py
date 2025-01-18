@@ -139,7 +139,7 @@ class BaseTrainer:
             self.wdir.mkdir(parents=True, exist_ok=True)  # make dir
             self.args.save_dir = str(self.save_dir)
             yaml_save(self.save_dir / "args.yaml", vars(self.args))  # save run args
-        self.last, self.best = self.wdir / "last.pt", self.wdir / "best.pt"  # checkpoint paths
+        self.last, self.best = self.wdir / "last.pt", self.wdir / "best_v0.pt"  # checkpoint paths
         self.save_period = self.args.save_period
 
         self.batch_size = self.args.batch
@@ -407,7 +407,7 @@ class BaseTrainer:
             epoch += 1
 
         if RANK in {-1, 0}:
-            # Do final val with best.pt
+            # Do final val with best_v0.pt
             LOGGER.info(
                 f"\n{epoch - self.start_epoch + 1} epochs completed in "
                 f"{(time.time() - self.train_time_start) / 3600:.3f} hours."
@@ -448,7 +448,7 @@ class BaseTrainer:
         # Save checkpoints
         self.last.write_bytes(serialized_ckpt)  # save last.pt
         if self.best_fitness == self.fitness:
-            self.best.write_bytes(serialized_ckpt)  # save best.pt
+            self.best.write_bytes(serialized_ckpt)  # save best_v0.pt
         if (self.save_period > 0) and (self.epoch > 0) and (self.epoch % self.save_period == 0):
             (self.wdir / f"epoch{self.epoch}.pt").write_bytes(serialized_ckpt)  # save epoch, i.e. 'epoch3.pt'
 

@@ -40,7 +40,7 @@ class Dataset:
         # filenum = len(os.listdir(data_dir))
         datalist = []
         for data_dir_single in data_dir:
-            datalist = datalist + [data_dir_single + it for it in sorted(os.listdir(data_dir))]
+            datalist = datalist + [data_dir_single + it for it in sorted(os.listdir(data_dir_single))]
         if self.subset < 1:
             datalist = random.sample(datalist, int(len(datalist) * self.subset))
 
@@ -49,7 +49,7 @@ class Dataset:
 
     def __getitem__(self, i):
         img_id = self.ids[i]  # folder names
-        file = pd.read_csv(img_id)  ###########
+        file = pd.read_csv(img_id, keep_default_na=False)  ###########
         mc = file.get(['mc']).to_numpy().squeeze()
         counts = file.get(['counts']).to_numpy().squeeze()
         target = {'ion': file.get(['ion']).to_numpy().squeeze(), 'charge': file.get(['charge']).to_numpy().squeeze(),
@@ -57,7 +57,7 @@ class Dataset:
                   'charge2': file.get(['charge2']).to_numpy().squeeze()}
         if self.normalize_c:
             counts = (counts - counts.min()) / (counts.max() - counts.min())
-        labels = np.array([re.findall('.[^A-Z]*', it)[0] for it in target['ion']]) # Not including the light elements in mole here
+        labels = np.array([re.findall('.[^A-Z]*', str(it))[0] for it in target['ion']]) # Not including the light elements in mole here
         # Initialize label encoder if not provided
         if self.label_encoder is None:
             self.label_encoder = LabelEncoder()
@@ -66,11 +66,12 @@ class Dataset:
             self.label_encoder = self.label_encoder
             encoded_labels = self.label_encoder.transform(labels.ravel())
 
-        mc = torch.as_tensor(mc)
-        counts = torch.as_tensor(counts)
-        encoded_labels = torch.as_tensor(encoded_labels, dtype=torch.int64)
+        mc = torch.as_tensor(mc, dtype=torch.float32)
+        counts = torch.as_tensor(counts, dtype=torch.float32)
+        encoded_labels = torch.as_tensor(encoded_labels, dtype=torch.int64) # dont change dtype
         indexes = counts > self.threshold_c
-        return (mc[indexes], counts[indexes]), encoded_labels[indexes]
+        final_out = torch.stack((mc[indexes], counts[indexes], encoded_labels[indexes]))
+        return final_out.T
 
     def __len__(self):
         return len(self.ids)

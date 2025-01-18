@@ -73,7 +73,7 @@ class BboxLoss(nn.Module):
         # DFL loss
         if self.use_dfl:
             target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max)
-
+            target_ltrb.to(pred_dist.device)
             loss_dfl = self._df_loss(pred_dist[fg_mask].view(-1, self.reg_max + 1), target_ltrb[fg_mask],
                                      low_end_weight=self.low_end_weight) * weight
             loss_dfl = loss_dfl.sum() / target_scores_sum
@@ -95,11 +95,11 @@ class BboxLoss(nn.Module):
         tr = tl + 1  # target right, ceiling value
         wl = tr - target  # weight left
         wr = 1 - wl  # weight right
+        weight = torch.as_tensor((low_end_weight, 1)).to(pred_dist.device)
+
         return (
-                F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape)
-                * wl * torch.as_tensor((low_end_weight, 1))
-                + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
-                * torch.as_tensor((low_end_weight, 1))
+                F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape) * wl * weight
+                + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr * weight
         ).mean(-1, keepdim=True)
         # view(tl.shape) (N, 2) for
 
