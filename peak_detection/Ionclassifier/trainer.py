@@ -18,9 +18,11 @@ from peak_detection.Ionclassifier.RNN import IonRNN, WeightedFocalLoss
 from peak_detection.Ionclassifier.dataset import Dataset
 from peak_detection.Ionclassifier.train_utils import Parameters, init_seeds, weights_init, EarlyStopping, ModelEMA, get_gpu_info, plot_losses
 
+
 def one_cycle(y1=0.0, y2=1.0, steps=100):
     """Returns a lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf."""
     return lambda x: max((1 - math.cos(x * math.pi / steps)) / 2, 0) * (y2 - y1) + y1
+
 
 def collate_fn(batch):
     # Sort batch by sequence length (descending)
@@ -33,6 +35,7 @@ def collate_fn(batch):
     padded_seqs = torch.nn.utils.rnn.pad_sequence(batch, batch_first=True)
 
     return padded_seqs, lengths
+
 
 class BaseTrainer:
     """
@@ -87,10 +90,9 @@ class BaseTrainer:
         self.setup_scheduler()
         self.scheduler.last_epoch = - 1  # do not move
 
-
         # Initialize dataset
         dataset = Dataset(data_dir=self.data_path, filestart=0, normalize_c=self.pms.normalize_c,
-                          subset = self.pms.subset)
+                          subset=self.pms.subset)
 
         # print("The input data shape is ", dataset.data_shape())
 
