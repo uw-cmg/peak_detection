@@ -19,9 +19,9 @@ setup(
     # description='',
     # keywords=[],
     install_requires=[
-        "torch==2.1.2", # keep at 2.1.2 for euler cluser
+        "torch==2.1.2",  # keep at 2.1.2 for euler cluser
         "torchvision==0.16.2",
-        "numpy==1.24.1",
+        "numpy==1.26.4",  # used to be 1.24.1
         "matplotlib",
         "scikit-image",
         "scikit-learn==1.6.1",
