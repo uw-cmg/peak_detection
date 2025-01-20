@@ -174,11 +174,10 @@ class BaseTrainer:
                 # Calculate loss only on valid sequence parts
                 mask = torch.arange(pred.size(1)).expand(len(lengths_train), pred.size(1)) < torch.tensor(lengths_train).unsqueeze(1)
                 mask = mask.to(pred.device)
-                lossfunc = WeightedFocalLoss(alpha = self.pms.loss_alpha , gamma = self.pms.loss_gamma)
+                lossfunc = WeightedFocalLoss(alpha=self.pms.loss_alpha, gamma=self.pms.loss_gamma)
                 trainloss = lossfunc(pred[mask], targets_train[mask])
 
                 self.trainloss_total.append(trainloss.item())
-
 
             # Backward
             self.scaler.scale(trainloss).backward() #######################
@@ -211,10 +210,11 @@ class BaseTrainer:
             targets_test = targets_test.to(self.device)
             self.model.eval()
             with torch.no_grad():
-
-                pred = self.model(input_test, lengths_test)
-
-                testloss = lossfunc(pred, targets_test)
+                pred_test = self.model(input_test, lengths_test)
+                # Calculate loss only on valid sequence parts
+                mask_test = torch.arange(pred_test.size(1)).expand(len(lengths_test), pred_test.size(1)) < torch.tensor(lengths_test).unsqueeze(1)
+                mask_test = mask_test.to(pred.device)
+                testloss = lossfunc(pred_test[mask_test], targets_test[mask_test])
 
             self.testloss_total.append(testloss.item())
 

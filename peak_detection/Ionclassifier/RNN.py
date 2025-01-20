@@ -19,7 +19,7 @@ class IonRNN(nn.Module):
             num_layers=num_layers,
             batch_first=True,
             bidirectional=True, # yes
-            dropout = 0.3  # Add dropout for regularization
+            dropout=0.3  # Add dropout for regularization
 
         )
         # Additional layers for better feature extraction
@@ -87,10 +87,11 @@ class WeightedFocalLoss(nn.Module):
         self.gamma = gamma
 
     def forward(self, inputs, targets):
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        ce_loss = F.cross_entropy(inputs.float(), targets.long(), reduction='none')
         pt = torch.exp(-ce_loss)
         focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
         return focal_loss.mean()
+
 
 ### Just reference
 """
