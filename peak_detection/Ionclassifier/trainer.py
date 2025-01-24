@@ -82,7 +82,7 @@ class BaseTrainer:
 
         self.model.to(self.device)
         if self.pretrained:
-            self.model = torch.load(self.model_path).to(self.device)
+            self.model = torch.load(self.model_path)['ema'].to(self.device)
         else:
             self.model.apply(weights_init)
 
