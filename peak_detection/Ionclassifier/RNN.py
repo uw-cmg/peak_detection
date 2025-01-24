@@ -5,7 +5,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class IonRNN(nn.Module):
-    def __init__(self, input_size=2, hidden_size=256, num_layers=3, num_classes=118, dropout = 0.3):
+    def __init__(self, input_size=2, hidden_size=256, num_layers=3, num_classes=118, dropout=0.3):
         super(IonRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -49,7 +49,7 @@ class IonRNN(nn.Module):
 
         # Create attention mask for padding
         max_len = output.size(1)
-        attention_mask = torch.arange(max_len).expand(len(lengths), max_len) >= torch.tensor(lengths).unsqueeze(1)
+        attention_mask = torch.arange(max_len).expand(len(lengths), max_len) >= torch.as_tensor(lengths).unsqueeze(1)
         attention_mask = attention_mask.to(output.device)
 
         # Apply attention

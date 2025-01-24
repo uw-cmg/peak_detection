@@ -1,5 +1,6 @@
 # Default training settings and hyperparameters for IonRNN training
-
+pretrained: True
+model_path: C:/Users/jingr/PycharmProjects/peak_detection/peak_detection/Ionclassifier/
 # Train settings -------------------------------------------------------------------------------------------------------
 save_path: C:/Users/jingr/PycharmProjects/peak_detection/peak_detection/Ionclassifier/
 data_path: ['C:/Users/jingr/OneDrive/Documents/APTML/testdata/',]

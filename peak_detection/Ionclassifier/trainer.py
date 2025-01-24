@@ -68,6 +68,9 @@ class BaseTrainer:
         self.subset = self.pms.subset
         if not os.path.exists(self.save_path):
             os.mkdir(self.save_path)
+        self.pretrained = self.pms.pretrained
+        if self.pretrained:
+            self.model_path = self.pms.model_path
 
     def train(self):
 
@@ -78,7 +81,10 @@ class BaseTrainer:
                             dropout=self.pms.dropout).to(self.device)
 
         self.model.to(self.device)
-        self.model.apply(weights_init)
+        if self.pretrained:
+            self.model = torch.load(self.model_path).to(self.device)
+        else:
+            self.model.apply(weights_init)
 
         self.stopper = EarlyStopping(patience=self.patience)  #########################################
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.pms.amp)  # automatic mixed precision training for speeding up and save memory
@@ -146,7 +152,7 @@ class BaseTrainer:
 
             self.model.train()  # turn on train mode!
 
-            self.optimizer.zero_grad()# YOU HAVE TO KEEP THIS. Do not remove
+            self.optimizer.zero_grad() # YOU HAVE TO KEEP THIS. Do not remove
             input_train = train[:, :, :2]
             input_train = input_train.to(self.device)
             lengths_train = torch.as_tensor(lengths_train).to(self.device)
