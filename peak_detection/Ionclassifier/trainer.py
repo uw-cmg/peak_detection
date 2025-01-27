@@ -82,8 +82,8 @@ class BaseTrainer:
 
         self.model.to(self.device)
         if self.pretrained:
-            self.model = torch.load(self.model_path)['ema'].to(self.device)
-            self.model.train()
+            modelweights = torch.load(self.model_path)['state_dict']
+            self.model.load_state_dict(modelweights)
         else:
             self.model.apply(weights_init)
 
@@ -179,7 +179,7 @@ class BaseTrainer:
                 pred = self.model(input_train, lengths_train)
 
                 # Calculate loss only on valid sequence parts
-                mask = torch.arange(pred.size(1)).expand(len(lengths_train), pred.size(1)) < torch.tensor(lengths_train).unsqueeze(1)
+                mask = torch.arange(pred.size(1)).expand(len(lengths_train), pred.size(1)) < torch.as_tensor(lengths_train).unsqueeze(1)
                 mask = mask.to(pred.device)
                 lossfunc = WeightedFocalLoss(alpha=self.pms.loss_alpha, gamma=self.pms.loss_gamma)
                 trainloss = lossfunc(pred[mask], targets_train[mask])
