@@ -20,7 +20,7 @@ CHEMICAL_ELEMENTS = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na',
                      'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md',
                      'No', 'Lr', 'Rf', 'Db', 'Sg', 'Bh', 'Hs', 'Mt', 'Ds', 'Rg', 'Cn',
                      'Nh', 'Fl', 'Mc', 'Lv', 'Ts', 'Og']
-
+# since the atomic number for the selected elements are not continuous, so not work well with label-coder
 le = LabelEncoder()
 le.fit(CHEMICAL_ELEMENTS)
 
