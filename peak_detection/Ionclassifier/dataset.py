@@ -9,17 +9,28 @@ import re
 import random
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
-CHEMICAL_ELEMENTS = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 'Mg',
-                     'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr',
-                     'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br',
-                     'Kr', 'Rb', 'Sr', 'Y', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd',
-                     'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 'Xe', 'Cs', 'Ba', 'La',
-                     'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er',
-                     'Tm', 'Yb', 'Lu', 'Hf', 'Ta', 'W', 'Re', 'Os', 'Ir', 'Pt', 'Au',
-                     'Hg', 'Tl', 'Pb', 'Bi', 'Po', 'At', 'Rn', 'Fr', 'Ra', 'Ac', 'Th',
-                     'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md',
-                     'No', 'Lr', 'Rf', 'Db', 'Sg', 'Bh', 'Hs', 'Mt', 'Ds', 'Rg', 'Cn',
-                     'Nh', 'Fl', 'Mc', 'Lv', 'Ts', 'Og']
+
+CHEMICAL_ELEMENTS_all = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 'Mg',
+                         'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr',
+                         'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br',
+                         'Kr', 'Rb', 'Sr', 'Y', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd',
+                         'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 'Xe', 'Cs', 'Ba', 'La',
+                         'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er',
+                         'Tm', 'Yb', 'Lu', 'Hf', 'Ta', 'W', 'Re', 'Os', 'Ir', 'Pt', 'Au',
+                         'Hg', 'Tl', 'Pb', 'Bi', 'Po', 'At', 'Rn', 'Fr', 'Ra', 'Ac', 'Th',
+                         'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md',
+                         'No', 'Lr', 'Rf', 'Db', 'Sg', 'Bh', 'Hs', 'Mt', 'Ds', 'Rg', 'Cn',
+                         'Nh', 'Fl', 'Mc', 'Lv', 'Ts', 'Og']
+
+# Below are used in model created after Feb 2025
+# Only includes the elements appear in the Material project componds
+CHEMICAL_ELEMENTS = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 'Mg', 'Al',
+                     'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe',
+                     'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 'Rb', 'Sr',
+                     'Y', 'Zr', 'Nb', 'Mo', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb',
+                     'Te', 'I', 'Xe', 'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Sm', 'Eu', 'Gd',
+                     'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Lu', 'Hf', 'Ta', 'W', 'Re', 'Os', 'Ir',
+                     'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 'Th', 'U']
 # since the atomic number for the selected elements are not continuous, so not work well with label-coder
 le = LabelEncoder()
 le.fit(CHEMICAL_ELEMENTS)
@@ -30,6 +41,7 @@ class Dataset:
     :argument
     threshold_c: filter out the peaks with very low relative counts (normalized by the maximum counts),
     """
+
     def __init__(self, data_dir, filestart=0, normalize_c=True,
                  subset=1, label_encoder=le, threshold_c=1e-7, **kwargs):
 
@@ -57,7 +69,8 @@ class Dataset:
                   'charge2': file.get(['charge2']).to_numpy().squeeze()}
         if self.normalize_c:
             counts = (counts - counts.min()) / (counts.max() - counts.min())
-        labels = np.array([re.findall('.[^A-Z]*', str(it))[0] for it in target['ion']]) # Not including the light elements in mole here
+        labels = np.array([re.findall('.[^A-Z]*', str(it))[0] for it in
+                           target['ion']])  # Not including the light elements in mole here
         # Initialize label encoder if not provided
         if self.label_encoder is None:
             self.label_encoder = LabelEncoder()
@@ -68,11 +81,10 @@ class Dataset:
 
         mc = torch.as_tensor(mc, dtype=torch.float32)
         counts = torch.as_tensor(counts, dtype=torch.float32)
-        encoded_labels = torch.as_tensor(encoded_labels, dtype=torch.int64) # dont change dtype
+        encoded_labels = torch.as_tensor(encoded_labels, dtype=torch.int64)  # dont change dtype
         indexes = counts > self.threshold_c
         final_out = torch.stack((mc[indexes], counts[indexes], encoded_labels[indexes]))
         return final_out.T
 
     def __len__(self):
         return len(self.ids)
-
