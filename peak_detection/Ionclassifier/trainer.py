@@ -125,7 +125,7 @@ class BaseTrainer:
             os.mkdir(self.save_path)
         self.optimizer.zero_grad()
         self.train_cell(self.d_train, self.d_test)
-        torch.save({"date": datetime.now().isoformat(),'ema': deepcopy(self.ema.ema), 'state_dict': self.model.state_dict(),
+        torch.save({"date": datetime.now().isoformat(), 'ema': deepcopy(self.ema.ema), 'state_dict': self.model.state_dict(),
                     'train': self.trainloss_total, 'test': self.testloss_total}, self.save_path + '/model_final.tar')
 
         plot_losses(self.trainloss_total, self.testloss_total, self.save_path)
@@ -219,7 +219,7 @@ class BaseTrainer:
             with torch.no_grad():
                 pred_test = self.model(input_test, lengths_test)
                 # Calculate loss only on valid sequence parts
-                mask_test = torch.arange(pred_test.size(1)).expand(len(lengths_test), pred_test.size(1)) < torch.tensor(lengths_test).unsqueeze(1)
+                mask_test = torch.arange(pred_test.size(1)).expand(len(lengths_test), pred_test.size(1)) < torch.as_tensor(lengths_test).unsqueeze(1)
                 mask_test = mask_test.to(pred.device)
                 testloss = lossfunc(pred_test[mask_test], targets_test[mask_test])
 

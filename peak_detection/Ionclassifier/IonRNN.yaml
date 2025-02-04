@@ -28,7 +28,7 @@ seed: 0
 input_size: 2
 hidden_size: 256
 num_layers: 3
-num_classes: 118
+num_classes: 82
 loss_alpha: 1
 loss_gamma: 2
 dropout: 0.2 # (float) use dropout regularization (classify train only)
