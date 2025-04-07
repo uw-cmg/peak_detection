@@ -30,4 +30,4 @@ Check out [ExampleInference jupyter notebook](peak_detection/RangingNN/notebooks
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wdwzyyg/peak_detection/blob/master/peak_detection/RangingNN/notebooks/ExampleInference.ipynb)
 
 New notebook:
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]([https://github.com/](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/peak_detection/RangingNN/notebooks/RangingNNtraintest.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/peak_detection/RangingNN/notebooks/RangingNNtraintest.ipynb)
