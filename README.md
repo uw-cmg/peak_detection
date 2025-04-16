@@ -24,10 +24,7 @@ pip install git+https://github.com/wdwzyyg/peak_detection.git
 ### Usage 
 
 ---
-#### Using the RangingNN model
+#### Using the RangingNN and IonClassifier models
 
-Check out [ExampleInference jupyter notebook](peak_detection/RangingNN/notebooks/ExampleInference.ipynb) for implementation details.
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wdwzyyg/peak_detection/blob/master/peak_detection/RangingNN/notebooks/ExampleInference.ipynb)
-
-New notebook:
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/peak_detection/RangingNN/notebooks/RangingNNtraintest.ipynb)
+Use ML models to predict APT peak ranges and ion types:
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/peak_detection/APT_Predictor.ipynb)
