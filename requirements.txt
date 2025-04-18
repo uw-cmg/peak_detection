@@ -8,3 +8,4 @@ apav==1.4.0
 h5py
 pandas
 tqdm
+pyyaml
