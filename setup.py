@@ -10,7 +10,7 @@ setup(
     include_package_data=True,
     package_data={
         # If you have non-Python files, specify them here:
-        '': ['*.yaml', '*.pt', '*.csv']
+        '': ['*.yaml', '*.pt', '*.csv', '*.tar']
     },
     url='https://github.com/wdwzyyg/peak_detection.git',
     license='MIT',
