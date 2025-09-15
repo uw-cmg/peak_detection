@@ -213,9 +213,9 @@ class DetectionPredictor:
         # self.model.nc = 1
         # self.model.args = self.args  # attach hyperparameters to model
         if self.args.device == 'cpu':
-            self.model = torch.load(modelpath, map_location = torch.device('cpu'))['ema']
+            self.model = torch.load(modelpath, map_location = torch.device('cpu'), weights_only=False)['ema']
         else:
-            self.model = torch.load(modelpath)['ema']
+            self.model = torch.load(modelpath, weights_only=False)['ema']
         self.model = self.model.float()
         self.model = self.model.to(self.args.device)
 
