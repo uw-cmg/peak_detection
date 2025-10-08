@@ -201,7 +201,7 @@ class BaseTrainer:
 
         # Model
         if self.args.pretrained:
-            weights = torch.load(self.args.pretrained, map_location="cpu")
+            weights = torch.load(self.args.pretrained, map_location="cpu", weights_only=False)
         else:
             weights = None
         self.model = self.get_model(cfg=self.model, weights=weights, verbose=RANK == -1)  # calls Model(cfg, weights)
