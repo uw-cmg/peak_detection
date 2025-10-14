@@ -28,3 +28,6 @@ pip install git+https://github.com/wdwzyyg/peak_detection.git
 
 Use ML models to predict APT peak ranges and ion types:
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/APT_Predictor.ipynb)
+
+Dev notebook:
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/APT_Predictor_dev_2025-10-14.ipynb)
