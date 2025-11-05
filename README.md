@@ -31,3 +31,6 @@ Use ML models to predict APT peak ranges and ion types:
 
 Dev notebook:
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/APT_Predictor_dev_2025-10-14.ipynb)
+
+Dev notebook as of 11/5/25 (lots of clean up, just using per-spectrum RF):
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/APT_Predictor_dev_2025_11_5.ipynb)
