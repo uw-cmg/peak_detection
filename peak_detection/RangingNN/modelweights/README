@@ -1,0 +1,5 @@
+Model info
+
+best.pt : Initial model trained by Jingrui using initial file set of ~20 files
+best_v0.pt : Initial model trained by Jingrui using initial file set of ~20 files
+best_v0_2025-11-12.pt : Updated model trained by Ryan using expanded file set of ~38 files
