@@ -12,7 +12,7 @@ setup(
         # If you have non-Python files, specify them here:
         '': [
             '*.yaml',
-            'RangingNN/modelweights/best.pt',
+            'RangingNN/modelweights/best_v0_2025-11-12.pt',
             'IonClassifier/training_data/NewData/Data0001/*.csv'
         ],
 
