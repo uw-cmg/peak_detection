@@ -218,8 +218,8 @@ def load_ion_training_data(path='peak_detection/Ionclassifier/training_data/NewD
                            elements_to_get_molecules=list(),
                            threshold_c=1e-8,
                            num_files=1000,
-                           neighbor_threshold=2.0,
-                           use_signature=True):
+                           neighbor_threshold=0.0,
+                           use_signature=False):
     """
     load the evaluation files, get input and gt, normalized counts,
     including neighborhood features.
