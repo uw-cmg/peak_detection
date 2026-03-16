@@ -37,3 +37,6 @@ Dev notebook 11/5/25 (example of using per-spectrum RF):
 
 Dev notebook 11/18/25 (example of using updated ranging model with iterative peak finding):
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/APT_Predictor_dev_2025_11_18.ipynb)
+
+Dev notebook 3/16/26 (example of using new CLI-based code detect_peaks.py):
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/uw-cmg/peak_detection/blob/master/APT_Predictor_dev_2026_03_16.ipynb)
