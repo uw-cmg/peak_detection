@@ -213,7 +213,7 @@ def extract_elements_from_rrng(rrng_file):
             elements.add(f)
     return sorted(list(elements))
 
-def load_ion_training_data(path='Ionclassifier/training_data/NewData/Data0001',
+def load_ion_training_data(path='peak_detection/Ionclassifier/training_data/NewData/Data0001',
                            element_list=list(),
                            elements_to_get_molecules=list(),
                            threshold_c=1e-8,
@@ -713,8 +713,8 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file, n_iter=0,
     from pymatgen.core import Composition # Added import for Composition
 
     # Local paths
-    modelpath = os.path.join(os.path.dirname(__file__), 'RangingNN/modelweights', yolo_weights)
-    cfg_path = os.path.join(os.path.dirname(__file__), 'RangingNN/cfg/prediction_args.yaml')
+    modelpath = os.path.join(os.path.dirname(__file__), 'peak_detection/RangingNN/modelweights', yolo_weights)
+    cfg_path = os.path.join(os.path.dirname(__file__), 'peak_detection/RangingNN/cfg/prediction_args.yaml')
     
     if not os.path.exists(modelpath) or not os.path.exists(cfg_path):
         print(f"  [Error] YOLO model files not found at {modelpath}")
@@ -822,7 +822,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file, n_iter=0,
 
     # Load synthetic training data
     if training_path is None:
-        training_data_path = os.path.join(current_dir, 'Ionclassifier', 'training_data', 'NewData', 'Data0001')
+        training_data_path = os.path.join(current_dir, 'peak_detection', 'Ionclassifier', 'training_data', 'NewData', 'Data0001')
     else:
         training_data_path = training_path
         
@@ -1090,7 +1090,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file, n_iter=0,
 
     # --- UNKNOWN PEAK SUGGESTER ---
     unknown_suggestions = []
-    synthetic_data_dir = os.path.join(current_dir, 'Ionclassifier', 'training_data', 'NewData', 'Data0001')
+    synthetic_data_dir = os.path.join(current_dir, 'peak_detection', 'Ionclassifier', 'training_data', 'NewData', 'Data0001')
     try:
         print("  Building empirical m/c distributions for Unknown peak suggestions...")
         empirical_stats = build_empirical_mc_distributions(path=synthetic_data_dir, num_files=500)
@@ -1498,7 +1498,7 @@ def main():
     parser.add_argument("--kde_threshold", type=float, default=0.25, help="KDE density threshold for flagging unknowns (default: 0.25)")
     parser.add_argument("--use_mc_distance", action="store_true", help="Use m/c distance to training data for flagging unknowns instead of KDE")
     parser.add_argument("--mc_threshold", type=float, default=0.2, help="m/c distance threshold for flagging unknowns (default: 0.2)")
-    parser.add_argument("--training_path", type=str, default='Ionclassifier/training_data/NewData_peakshift0_noise0/Data0001', help="Path to synthetic training data for RF/KDE models")
+    parser.add_argument("--training_path", type=str, default='peak_detection/Ionclassifier/training_data/NewData_peakshift0_noise0/Data0001', help="Path to synthetic training data for RF/KDE models")
     parser.add_argument("--include_molecules", action="store_false", default=False, help="Include molecular species in synthetic training data")
     parser.add_argument("--use_neighborhood", action="store_false", default=False, help="Use multi-peak neighborhood features for RF classification (default: True)")
     parser.add_argument("--no_neighborhood", action="store_false", dest="use_neighborhood", help="Disable neighborhood features (use single peak only)")
