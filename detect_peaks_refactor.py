@@ -30,6 +30,84 @@ from peak_detection.yolo_detection import predict_peak_ranges_yolo, identify_pea
 from peak_detection.kde_model import KDECache
 
 
+def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
+    """
+    Plot YOLO prediction vs truth ranges on top of the spectrum.
+
+    Parameters
+    ----------
+    stats : dict
+        The dict returned by `process_dataset` (must contain 'x', 'spectrum',
+        'truth', 'detected_ranges', and 'dataset' keys).
+    xlim : tuple, optional
+        (xmin, xmax) to zoom into a region.
+    save_path : str, optional
+        If provided, save the figure to this path. Otherwise call plt.show()
+        for interactive viewing.
+    facecolor : str, optional
+        Background color of the plot. If None, uses the matplotlib default.
+    """
+    x = stats['x']
+    y_mapped = stats['spectrum']
+    truth = stats['truth']
+    detected = stats['detected_ranges']
+    dataset = stats['dataset']
+
+    # Compute default x-axis upper bound
+    true_max = max(t['end'] for t in truth) if truth else 0
+    pred_max = max(p['end'] for p in detected) if detected else 0
+    plot_xmax = max(true_max, pred_max) + 5
+
+    fig = plt.figure(figsize=(15, 8))
+    if facecolor is not None:
+        fig.patch.set_facecolor(facecolor)
+        plt.gca().set_facecolor(facecolor)
+    plt.plot(x, y_mapped, color='black', alpha=0.3, label='Mapped Spectrum (map01)')
+
+    # Plot true ranges (blue)
+    for i, r in enumerate(truth):
+        if xlim and (r['end'] < xlim[0] or r['start'] > xlim[1]):
+            continue
+        plt.axvspan(r['start'], r['end'], color='blue', alpha=0.15)
+        if i == 0:
+            plt.axvspan(r['start'], r['end'], color='blue', alpha=0.15, label='Real (RRNG)')
+        if 'label' in r:
+            center = (r['start'] + r['end']) / 2
+            plt.text(center, 0.85, r['label'], color='blue', fontsize=6,
+                     ha='center', va='bottom', rotation=90, alpha=0.7)
+
+    # Plot predicted ranges (red)
+    for i, p in enumerate(detected):
+        if xlim and (p['end'] < xlim[0] or p['start'] > xlim[1]):
+            continue
+        plt.axvspan(p['start'], p['end'], color='red', alpha=0.3, hatch='//')
+        if i == 0:
+            plt.axvspan(p['start'], p['end'], color='red', alpha=0.3, hatch='//', label='YOLO Prediction')
+        if 'label' in p:
+            center = (p['start'] + p['end']) / 2
+            plt.text(center, 0.95, p['label'], color='darkred', fontsize=6,
+                     ha='center', va='bottom', rotation=90, alpha=0.8)
+
+    plt.xlabel('Mass/Charge Ratio (Da)')
+    plt.ylabel('Mapped Intensity (0-1)')
+    zoom_suffix = f" (Zoom {xlim[0]}-{xlim[1]})" if xlim else ""
+    plt.title(f'YOLO Comparison: {dataset}{zoom_suffix}')
+    plt.legend(loc='upper right', fontsize='small')
+    plt.grid(True, alpha=0.2)
+
+    if xlim:
+        plt.xlim(xlim)
+    else:
+        plt.xlim(0, plot_xmax)
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        print(f"Saved comparison plot to {save_path}")
+        plt.close('all')
+    else:
+        plt.show()
+
+
 def process_dataset(
     apt_file: str,
     rrng_file: str,
@@ -155,6 +233,9 @@ def process_dataset(
         'unknown_count': unknown_count,
         'identifications': identified_peaks,
         'detected_ranges': all_predicted,
+        'x': x,
+        'spectrum': y_mapped,
+        'truth': truth,
     }
 
     # --- SAVE PEAK RANGES ---
@@ -174,59 +255,11 @@ def process_dataset(
 
     # --- PLOT ---
     if save_plots:
-        # Benchmark
-        truth = parse_rrng(rrng_file)
         if xlim is None:
             print(f"Manual RRNG ranges: {len(truth)}")
-
-        plt.figure(figsize=(15, 8))
-        plt.plot(x, y_mapped, color='black', alpha=0.3, label='Mapped Spectrum (map01)')
-
-        # Plot true ranges (blue)
-        for i, r in enumerate(truth):
-            if xlim:
-                if r['end'] < xlim[0] or r['start'] > xlim[1]:
-                    continue
-            plt.axvspan(r['start'], r['end'], color='blue', alpha=0.15)
-            if i == 0:
-                plt.axvspan(r['start'], r['end'], color='blue', alpha=0.15, label='Real (RRNG)')
-
-            if 'label' in r:
-                center = (r['start'] + r['end']) / 2
-                plt.text(center, 0.85, r['label'], color='blue', fontsize=6,
-                         ha='center', va='bottom', rotation=90, alpha=0.7)
-
-        # Plot predicted ranges (red)
-        for i, p in enumerate(detected1):
-            if xlim:
-                if p['end'] < xlim[0] or p['start'] > xlim[1]:
-                    continue
-            plt.axvspan(p['start'], p['end'], color='red', alpha=0.3, hatch='//')
-            if i == 0:
-                plt.axvspan(p['start'], p['end'], color='red', alpha=0.3, hatch='//', label='YOLO Prediction')
-
-            if 'label' in p:
-                center = (p['start'] + p['end']) / 2
-                plt.text(center, 0.95, p['label'], color='darkred', fontsize=6,
-                         ha='center', va='bottom', rotation=90, alpha=0.8)
-
-        plt.xlabel('Mass/Charge Ratio (Da)')
-        plt.ylabel('Mapped Intensity (0-1)')
-        zoom_suffix = f" (Zoom {xlim[0]}-{xlim[1]})" if xlim else ""
-        plt.title(f'YOLO Comparison: {output_dir}{zoom_suffix}')
-        plt.legend(loc='upper right', fontsize='small')
-        plt.grid(True, alpha=0.2)
-
-        if xlim:
-            plt.xlim(xlim)
-        else:
-            plt.xlim(0, plot_xmax)
-
         zoom_str = f"_zoom_{xlim[0]}_{xlim[1]}" if xlim else ""
         comp_plot_path = os.path.join(output_dir, f"{output_dir}_yolo_1d_model_comparison{zoom_str}.png")
-        plt.savefig(comp_plot_path, dpi=300)
-        print(f"Saved comparison plot to {comp_plot_path}")
-        plt.close('all')
+        plot_yolo_comparison(stats, xlim=xlim, save_path=comp_plot_path)
 
     return stats
 
