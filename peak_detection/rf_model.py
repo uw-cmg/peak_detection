@@ -148,7 +148,7 @@ def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_dec
         X_raw.append(feat)
 
     if not X_raw:
-        return [], [], []
+        return [], [], [], np.array([])
 
     X = np.array(X_raw)
     X_norm = scaler.transform(X)
@@ -178,4 +178,4 @@ def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_dec
         elements.append(", ".join(results_str))
         confs.append(info['conf1'])
         detailed_info.append(info)
-    return elements, confs, detailed_info
+    return elements, confs, detailed_info, peak_mcs

@@ -202,7 +202,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
     if len(X_train) > 0:
         try:
             scaler_rf, model_rf, target_decoder_rf = create_RF_model(X_train, ions_train)
-            raw_elements, rf_confs, detailed_rf = run_RF_model(
+            raw_elements, rf_confs, detailed_rf, peak_mcs = run_RF_model(
                 formatted_results, x_exp, spectrum_log, scaler_rf, model_rf, target_decoder_rf,
                 neighbor_threshold=eff_neighbor_threshold,
                 use_signature=use_signature
@@ -220,6 +220,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                     training_path=training_path, include_molecules=include_molecules
                 )
 
+            # --- Unphysical Peak Filtering ---
             suggestions = []
             for i, (el, conf_val, det) in enumerate(zip(raw_elements, rf_confs, detailed_rf)):
                 pred1_el = det.get('el1', '')
@@ -229,13 +230,14 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                         comp = Composition(pred1_el)
                         element_obj = max(comp.elements, key=lambda e: e.atomic_mass)
 
-                        mc_val = formatted_results[i]['start']
+                        mc_val = peak_mcs[i]  # m/c of highest-intensity bin in range
 
-                        # 1. KDE Check
+                        # 1. KDE Check (User-requested distance check)
                         if flag_unknowns and not use_mc_distance and kde_lookup_model is not None:
                             if pred1_el in kde_lookup_model:
                                 conf_kde = np.exp(kde_lookup_model[pred1_el].score_samples(np.array([[mc_val]])))[0]
                                 if conf_kde < kde_threshold:
+                                    # Too far away, double check with predictions ranking
                                     pred_ions, confs_kde = predict_lookup_model(kde_lookup_model, np.array([[mc_val]]))
                                     is_physical = False
                                     suggestions.append({
@@ -251,6 +253,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                                 min_dist = np.min(np.abs(train_mcs - mc_val))
                                 if min_dist > mc_threshold:
                                     is_physical = False
+                                    # For suggestions, we'll still use the KDE ranker logic to find best alternatives
                                     pred_ions, confs_kde = predict_lookup_model(kde_lookup_model, np.array([[mc_val]]))
                                     suggestions.append({
                                         'mc': mc_val,
