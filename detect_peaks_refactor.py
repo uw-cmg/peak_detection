@@ -177,7 +177,7 @@ def process_dataset(
 
     print(f"  Metadata saved: {output_dir}/{output_dir}_rf_elements.txt, {output_dir}/{output_dir}_true_species.txt")
 
-    # --- DETECTION ---
+    # --- RF ELEMENT IDENTIFICATION ---
     all_predicted, _, rf_accuracy, rf_accuracy_ele, unknown_count = predict_peak_ranges_yolo(
         apt_file, spectrum_log, x, rrng_file,
         n_iter=n_iter, prefix=output_dir,
@@ -192,6 +192,7 @@ def process_dataset(
 
     detected1 = all_predicted
 
+    # --- ACCURACY ASSESSMENT ---
     pc, rc, f1c = calculate_metrics(truth, all_predicted)
     print(f"  Total Combined Metrics: Precision={pc:.3f}, Recall={rc:.3f}, F1={f1c:.3f}")
 

@@ -271,7 +271,12 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                     formatted_results[i]['label'] = f'Unknown ({pred1_el})'
                     formatted_results[i]['id_score'] = 1.0
                     formatted_results[i]['method'] = 'RF (Filtered)'
-                    formatted_results[i]['detailed_id'] = {'el1': 'Unknown', 'conf1': 1.0, 'el2': '', 'conf2': 0.0}
+                    formatted_results[i]['detailed_id'] = {
+                        'el1': f'Unknown ({det["el1"]})',
+                        'conf1': det['conf1'],
+                        'el2': f'Unknown ({det["el2"]})' if det.get('el2') else '',
+                        'conf2': det.get('conf2', 0.0)
+                    }
                 else:
                     formatted_results[i]['label'] = el
                     formatted_results[i]['id_score'] = float(conf_val)
@@ -333,7 +338,9 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
         detailed_rows.append(row)
 
     detailed_rows = sorted(detailed_rows, key=lambda x: x['predicted peak start'])
-    with open(os.path.join(prefix_internal, f"{prefix_internal}_detailed_results.csv"), 'w', newline='') as f:
+
+    detailed_results_path = os.path.join(prefix_internal, f"{prefix_internal}_detailed_results.csv")
+    with open(detailed_results_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=[
             'predicted peak start', 'predicted peak end', 'true peak start',
             'true peak end', 'true element label', 'pred element label 1',
@@ -341,7 +348,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
         ])
         writer.writeheader()
         writer.writerows(detailed_rows)
-    print(f"  Detailed results saved to {prefix_internal}/{prefix_internal}_detailed_results.csv")
+    print(f"  Detailed results saved to {detailed_results_path}")
 
     # --- ACCURACY ASSESSMENT ---
     correct_matches = 0
@@ -459,6 +466,6 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
         print(f"  Failed to build unknown peak suggestions: {e}")
 
     # Calculate unknown count
-    unknown_count = sum(1 for r in detailed_rows if r.get('pred element label 1', '') == 'Unknown')
+    unknown_count = sum(1 for r in detailed_rows if str(r.get('pred element label 1', '')).startswith('Unknown'))
 
     return formatted_results, result, accuracy_pct, accuracy_pct_ele, unknown_count
