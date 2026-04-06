@@ -58,10 +58,18 @@ def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
     pred_max = max(p['end'] for p in detected) if detected else 0
     plot_xmax = max(true_max, pred_max) + 5
 
-    fig = plt.figure(figsize=(15, 8))
+    fig, ax = plt.subplots(figsize=(15, 8))
     if facecolor is not None:
         fig.patch.set_facecolor(facecolor)
-        plt.gca().set_facecolor(facecolor)
+        ax.set_facecolor(facecolor)
+        # Override dark-theme text colors so labels are visible
+        text_color = 'black' if facecolor in ('white', 'w', '#ffffff', '#fff') else 'white'
+        ax.xaxis.label.set_color(text_color)
+        ax.yaxis.label.set_color(text_color)
+        ax.title.set_color(text_color)
+        ax.tick_params(colors=text_color)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(text_color)
     plt.plot(x, y_mapped, color='black', alpha=0.3, label='Mapped Spectrum (map01)')
 
     # Plot true ranges (blue)
@@ -101,7 +109,7 @@ def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
         plt.xlim(0, plot_xmax)
 
     if save_path:
-        plt.savefig(save_path, dpi=300)
+        plt.savefig(save_path, dpi=300, facecolor=fig.get_facecolor())
         print(f"Saved comparison plot to {save_path}")
         plt.close('all')
     else:
