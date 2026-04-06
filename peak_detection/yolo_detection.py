@@ -5,6 +5,7 @@ import torch
 
 from pymatgen.core import Composition
 
+from .models import DetailedId, PeakRange
 from .utils import calculate_iou, calculate_iou_1d
 from .data_io import parse_rrng, extract_elements_from_rrng
 from .training import load_ion_training_data, get_similar_elements, build_empirical_mc_distributions
@@ -18,8 +19,8 @@ def remove_peaks_and_patch(spectrum, detected_ranges, window=10):
     """
     new_spectrum = spectrum.copy()
     for p in detected_ranges:
-        start_idx = int(np.round(p['start'] * 100))
-        end_idx = int(np.round(p['end'] * 100))
+        start_idx = int(np.round(p.start * 100))
+        end_idx = int(np.round(p.end * 100))
 
         start_idx = max(0, start_idx)
         end_idx = min(len(spectrum) - 1, end_idx)
@@ -50,7 +51,7 @@ def identify_peaks(detected_ranges, x, spectrum_log, allowed_elements=None, flag
 
     for p in detected_ranges:
         # Skip if already identified by RF or other method (and not Unknown)
-        if p.get('label') and p.get('label') != 'Unknown':
+        if p.label and p.label != 'Unknown':
             results.append(p)
             continue
 
@@ -163,15 +164,11 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
     formatted_results = []
     for r in final_ranges:
         s, e = r[0] * multiplier, r[1] * multiplier
-        formatted_results.append({
-            'pos': (s + e) / 2,
-            'start': s,
-            'end': e
-        })
+        formatted_results.append(PeakRange(start=s, end=e, pos=(s + e) / 2))
 
     # --- RF ELEMENT IDENTIFICATION ---
     truth_data = parse_rrng(rrng_file)
-    truth_species = sorted(list(set([t['label'] for t in truth_data if 'label' in t and t['label'] != 'Unknown'])))
+    truth_species = sorted(list(set([t.label for t in truth_data if t.label and t.label != 'Unknown'])))
     elements_for_molecules = extract_elements_from_rrng(rrng_file)
     if prefix:
         prefix_internal = prefix
@@ -223,7 +220,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
             # --- Unphysical Peak Filtering ---
             suggestions = []
             for i, (el, conf_val, det) in enumerate(zip(raw_elements, rf_confs, detailed_rf)):
-                pred1_el = det.get('el1', '')
+                pred1_el = det.el1
                 is_physical = True
                 if pred1_el and pred1_el != 'Unknown':
                     try:
@@ -268,20 +265,21 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                     is_physical = True
 
                 if not is_physical and flag_unknowns:
-                    formatted_results[i]['label'] = f'Unknown ({pred1_el})'
-                    formatted_results[i]['id_score'] = 1.0
-                    formatted_results[i]['method'] = 'RF (Filtered)'
-                    formatted_results[i]['detailed_id'] = {
-                        'el1': f'Unknown ({det["el1"]})',
-                        'conf1': det['conf1'],
-                        'el2': f'Unknown ({det["el2"]})' if det.get('el2') else '',
-                        'conf2': det.get('conf2', 0.0)
-                    }
+                    formatted_results[i].label = f'Unknown ({pred1_el})'
+                    formatted_results[i].id_score = 1.0
+                    formatted_results[i].method = 'RF (Filtered)'
+                    formatted_results[i].is_unknown = True
+                    formatted_results[i].detailed_id = DetailedId(
+                        el1=f'Unknown ({det.el1})',
+                        conf1=det.conf1,
+                        el2=f'Unknown ({det.el2})' if det.el2 else '',
+                        conf2=det.conf2
+                    )
                 else:
-                    formatted_results[i]['label'] = el
-                    formatted_results[i]['id_score'] = float(conf_val)
-                    formatted_results[i]['method'] = 'RF'
-                    formatted_results[i]['detailed_id'] = det
+                    formatted_results[i].label = el
+                    formatted_results[i].id_score = float(conf_val)
+                    formatted_results[i].method = 'RF'
+                    formatted_results[i].detailed_id = det
 
             # Write element suggestions to file
             if suggestions:
@@ -316,24 +314,25 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                 best_truth = t
 
         row = {
-            'predicted peak start': p['start'],
-            'predicted peak end': p['end']
+            'predicted peak start': p.start,
+            'predicted peak end': p.end
         }
 
         if best_iou > 0.1:
-            row['true peak start'] = best_truth['start']
-            row['true peak end'] = best_truth['end']
-            row['true element label'] = best_truth['label']
+            row['true peak start'] = best_truth.start
+            row['true peak end'] = best_truth.end
+            row['true element label'] = best_truth.label
         else:
             row['true peak start'] = ''
             row['true peak end'] = ''
             row['true element label'] = 'Unknown'
 
-        det = p.get('detailed_id', {'el1': 'Unknown', 'conf1': 0.0, 'el2': '', 'conf2': 0.0})
-        row['pred element label 1'] = det['el1']
-        row['pred confidence 1'] = round(det['conf1'], 3)
-        row['pred element label 2'] = det['el2']
-        row['pred confidence 2'] = round(det['conf2'], 3)
+        det = p.detailed_id if p.detailed_id is not None else DetailedId(el1='Unknown')
+        row['pred element label 1'] = det.el1
+        row['pred confidence 1'] = round(det.conf1, 3)
+        row['pred element label 2'] = det.el2
+        row['pred confidence 2'] = round(det.conf2, 3)
+        row['discarded'] = p.is_unknown
 
         detailed_rows.append(row)
 
@@ -344,7 +343,8 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
         writer = csv.DictWriter(f, fieldnames=[
             'predicted peak start', 'predicted peak end', 'true peak start',
             'true peak end', 'true element label', 'pred element label 1',
-            'pred confidence 1', 'pred element label 2', 'pred confidence 2'
+            'pred confidence 1', 'pred element label 2', 'pred confidence 2',
+            'discarded'
         ])
         writer.writeheader()
         writer.writerows(detailed_rows)
@@ -363,8 +363,8 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
             pred1 = str(row['pred element label 1'])
             pred2 = str(row['pred element label 2'])
 
-            if pred1 == 'Unknown':
-                accuracy_details.append(f"True: {true_label} -> Pred1: Unknown, Pred2:  | Excluded from Accuracy (Unphysical)")
+            if pred1.startswith('Unknown'):
+                accuracy_details.append(f"True: {true_label} -> Pred1: {pred1}, Pred2: {pred2} | Excluded from Accuracy (Unphysical)")
                 continue
 
             total_matches += 1
@@ -419,7 +419,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
 
         for i, r in enumerate(detailed_rows):
             pred_el = r.get('pred element label 1', '')
-            if pred_el == 'Unknown' or not pred_el:
+            if not pred_el or pred_el.startswith('Unknown'):
                 mc_center = (r['predicted peak start'] + r['predicted peak end']) / 2.0
 
                 closest_valid_el = None
@@ -428,7 +428,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                     if i == j:
                         continue
                     other_pred = other_r.get('pred element label 1', '')
-                    if other_pred and other_pred != 'Unknown':
+                    if other_pred and not other_pred.startswith('Unknown'):
                         other_center = (other_r['predicted peak start'] + other_r['predicted peak end']) / 2.0
                         dist = abs(mc_center - other_center)
                         if dist < min_geo_dist:
@@ -466,6 +466,6 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
         print(f"  Failed to build unknown peak suggestions: {e}")
 
     # Calculate unknown count
-    unknown_count = sum(1 for r in detailed_rows if str(r.get('pred element label 1', '')).startswith('Unknown'))
+    unknown_count = sum(1 for p in formatted_results if p.is_unknown)
 
     return formatted_results, result, accuracy_pct, accuracy_pct_ele, unknown_count

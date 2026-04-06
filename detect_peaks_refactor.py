@@ -24,6 +24,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+from peak_detection.models import DatasetStats
 from peak_detection.data_io import load_apt_from_file, parse_rrng, extract_elements_from_rrng, save_rrng
 from peak_detection.utils import calculate_iou, calculate_metrics
 from peak_detection.yolo_detection import predict_peak_ranges_yolo, identify_peaks
@@ -36,9 +37,8 @@ def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
 
     Parameters
     ----------
-    stats : dict
-        The dict returned by `process_dataset` (must contain 'x', 'spectrum',
-        'truth', 'detected_ranges', and 'dataset' keys).
+    stats : DatasetStats
+        The DatasetStats returned by `process_dataset`.
     xlim : tuple, optional
         (xmin, xmax) to zoom into a region.
     save_path : str, optional
@@ -47,15 +47,15 @@ def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
     facecolor : str, optional
         Background color of the plot. If None, uses the matplotlib default.
     """
-    x = stats['x']
-    y_mapped = stats['spectrum']
-    truth = stats['truth']
-    detected = stats['detected_ranges']
-    dataset = stats['dataset']
+    x = stats.x
+    y_mapped = stats.spectrum
+    truth = stats.truth
+    detected = stats.detected_ranges
+    dataset = stats.dataset
 
     # Compute default x-axis upper bound
-    true_max = max(t['end'] for t in truth) if truth else 0
-    pred_max = max(p['end'] for p in detected) if detected else 0
+    true_max = max(t.end for t in truth) if truth else 0
+    pred_max = max(p.end for p in detected) if detected else 0
     plot_xmax = max(true_max, pred_max) + 5
 
     fig, ax = plt.subplots(figsize=(15, 8))
@@ -74,26 +74,26 @@ def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
 
     # Plot true ranges (blue)
     for i, r in enumerate(truth):
-        if xlim and (r['end'] < xlim[0] or r['start'] > xlim[1]):
+        if xlim and (r.end < xlim[0] or r.start > xlim[1]):
             continue
-        plt.axvspan(r['start'], r['end'], color='blue', alpha=0.15)
+        plt.axvspan(r.start, r.end, color='blue', alpha=0.15)
         if i == 0:
-            plt.axvspan(r['start'], r['end'], color='blue', alpha=0.15, label='Real (RRNG)')
-        if 'label' in r:
-            center = (r['start'] + r['end']) / 2
-            plt.text(center, 0.85, r['label'], color='blue', fontsize=6,
+            plt.axvspan(r.start, r.end, color='blue', alpha=0.15, label='Real (RRNG)')
+        if r.label:
+            center = (r.start + r.end) / 2
+            plt.text(center, 0.85, r.label, color='blue', fontsize=6,
                      ha='center', va='bottom', rotation=90, alpha=0.7)
 
     # Plot predicted ranges (red)
     for i, p in enumerate(detected):
-        if xlim and (p['end'] < xlim[0] or p['start'] > xlim[1]):
+        if xlim and (p.end < xlim[0] or p.start > xlim[1]):
             continue
-        plt.axvspan(p['start'], p['end'], color='red', alpha=0.3, hatch='//')
+        plt.axvspan(p.start, p.end, color='red', alpha=0.3, hatch='//')
         if i == 0:
-            plt.axvspan(p['start'], p['end'], color='red', alpha=0.3, hatch='//', label='YOLO Prediction')
-        if 'label' in p:
-            center = (p['start'] + p['end']) / 2
-            plt.text(center, 0.95, p['label'], color='darkred', fontsize=6,
+            plt.axvspan(p.start, p.end, color='red', alpha=0.3, hatch='//', label='YOLO Prediction')
+        if p.label:
+            center = (p.start + p.end) / 2
+            plt.text(center, 0.95, p.label, color='darkred', fontsize=6,
                      ha='center', va='bottom', rotation=90, alpha=0.8)
 
     plt.xlabel('Mass/Charge Ratio (Da)')
@@ -147,11 +147,11 @@ def process_dataset(
     xlim: tuple = None,
     # Internal
     _kde_cache: KDECache = None,
-) -> dict:
+) -> DatasetStats:
     """
     Process a single APT dataset: detect peaks with YOLO, classify with RF, and evaluate.
 
-    Returns a stats dict with metrics, detected_ranges, identifications, etc.
+    Returns a DatasetStats with metrics, detected_ranges, identifications, etc.
     """
     rf_accuracy = 0.0
     rf_accuracy_ele = 0.0
@@ -170,7 +170,7 @@ def process_dataset(
     truth = parse_rrng(rrng_file)
 
     # Save true species and RF elements to files
-    truth_species = sorted(list(set([t['label'] for t in truth if 'label' in t and t['label'] != 'Unknown'])))
+    truth_species = sorted(list(set([t.label for t in truth if t.label and t.label != 'Unknown'])))
     elements_for_molecules = extract_elements_from_rrng(rrng_file)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -215,37 +215,36 @@ def process_dataset(
         tp_count = len(matched_truth)
 
     # Calculate min/max mass ranges
-    true_min = min([t['start'] for t in truth]) if truth else 0
-    true_max = max([t['end'] for t in truth]) if truth else 0
-    pred_min = min([p['start'] for p in all_predicted]) if all_predicted else 0
-    pred_max = max([p['end'] for p in all_predicted]) if all_predicted else 0
+    true_min = min([t.start for t in truth]) if truth else 0
+    true_max = max([t.end for t in truth]) if truth else 0
+    pred_min = min([p.start for p in all_predicted]) if all_predicted else 0
+    pred_max = max([p.end for p in all_predicted]) if all_predicted else 0
     plot_xmax = max(true_max, pred_max) + 5
 
     # --- IDENTIFICATION ---
     identified_peaks = identify_peaks(all_predicted, x, spectrum_log, allowed_elements=elements_for_molecules)
 
-    stats = {
-        'dataset': output_dir,
-        'config': 'YOLO 1D Model',
-        'true_peaks_count': len(truth),
-        'predicted_peaks_count': len(all_predicted),
-        'found_peaks_count': tp_count,
-        'precision': pc,
-        'recall': rc,
-        'f1': f1c,
-        'true_min_mc': true_min,
-        'true_max_mc': true_max,
-        'pred_min_mc': pred_min,
-        'pred_max_mc': pred_max,
-        'rf_accuracy': round(rf_accuracy, 2),
-        'rf_accuracy_ele': round(rf_accuracy_ele, 2),
-        'unknown_count': unknown_count,
-        'identifications': identified_peaks,
-        'detected_ranges': all_predicted,
-        'x': x,
-        'spectrum': y_mapped,
-        'truth': truth,
-    }
+    stats = DatasetStats(
+        dataset=output_dir,
+        true_peaks_count=len(truth),
+        predicted_peaks_count=len(all_predicted),
+        found_peaks_count=tp_count,
+        precision=pc,
+        recall=rc,
+        f1=f1c,
+        true_min_mc=true_min,
+        true_max_mc=true_max,
+        pred_min_mc=pred_min,
+        pred_max_mc=pred_max,
+        rf_accuracy=round(rf_accuracy, 2),
+        rf_accuracy_ele=round(rf_accuracy_ele, 2),
+        unknown_count=unknown_count,
+        identifications=identified_peaks,
+        detected_ranges=all_predicted,
+        x=x,
+        spectrum=y_mapped,
+        truth=truth,
+    )
 
     # --- SAVE PEAK RANGES ---
     if xlim is None:
@@ -253,7 +252,7 @@ def process_dataset(
         with open(results_file, 'w') as f:
             f.write("peak_start, peak_end, round, peak_pos\n")
             for p in detected1:
-                f.write(f"{p['start']:.4f}, {p['end']:.4f}, 1, {p['pos']:.4f}\n")
+                f.write(f"{p.start:.4f}, {p.end:.4f}, 1, {p.pos:.4f}\n")
         print(f"Ranges saved to {results_file}")
 
     # --- SAVE RRNG ---
@@ -347,18 +346,16 @@ def plot_rf_accuracy_summary(all_stats, output_path="rf_accuracy_vs_dataset.png"
     """Generates a summary plot for RF accuracy across datasets."""
     if not all_stats:
         return
-    all_stats = sorted(all_stats, key=lambda x: x['dataset'])
-    datasets = [s['dataset'] for s in all_stats]
+    all_stats = sorted(all_stats, key=lambda x: x.dataset)
+    datasets = [s.dataset for s in all_stats]
     display_names = [d[:20] + '...' if len(d) > 20 else d for d in datasets]
-    overall_acc = [s.get('rf_accuracy', 0) for s in all_stats]
-    elemental_acc = [s.get('rf_accuracy_ele', 0) for s in all_stats]
+    overall_acc = [s.rf_accuracy for s in all_stats]
+    elemental_acc = [s.rf_accuracy_ele for s in all_stats]
 
     unk_frac = []
     for s in all_stats:
-        pred_count = s.get('predicted_peaks_count', 1)
-        if pred_count == 0:
-            pred_count = 1
-        unk_frac.append(s.get('unknown_count', 0) / pred_count)
+        pred_count = s.predicted_peaks_count or 1
+        unk_frac.append(s.unknown_count / pred_count)
 
     avg_overall = np.mean(overall_acc)
     avg_elemental = np.mean(elemental_acc)
@@ -397,12 +394,12 @@ def plot_yolo_metrics_summary(all_stats, output_path="yolo_metrics_vs_dataset.pn
     """Generates a summary plot for YOLO metrics across datasets."""
     if not all_stats:
         return
-    all_stats = sorted(all_stats, key=lambda x: x['dataset'])
-    datasets = [s['dataset'] for s in all_stats]
+    all_stats = sorted(all_stats, key=lambda x: x.dataset)
+    datasets = [s.dataset for s in all_stats]
     display_names = [d[:20] + '...' if len(d) > 20 else d for d in datasets]
-    precision = [s.get('precision', 0) for s in all_stats]
-    recall = [s.get('recall', 0) for s in all_stats]
-    f1 = [s.get('f1', 0) for s in all_stats]
+    precision = [s.precision for s in all_stats]
+    recall = [s.recall for s in all_stats]
+    f1 = [s.f1 for s in all_stats]
 
     avg_p = np.mean(precision)
     avg_r = np.mean(recall)
@@ -500,7 +497,7 @@ def main():
     if is_single:
         # Single file mode
         stats = process_dataset(apt_path, rrng_path, output_dir=args.output_dir, **common_kwargs)
-        print(f"\nDone. Results in {stats['dataset']}/")
+        print(f"\nDone. Results in {stats.dataset}/")
     else:
         # Batch mode
         print(f"Scanning for datasets in {apt_path}...")
@@ -519,19 +516,19 @@ def main():
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 for row in all_stats:
-                    csv_row = {k: v for k, v in row.items() if k in fieldnames}
+                    csv_row = {k: getattr(row, k) for k in fieldnames}
                     writer.writerow(csv_row)
 
             # Aggregate identifications for YOLO model
             yolo_export = []
             for s in all_stats:
-                for p in s.get('identifications', []):
+                for p in s.identifications:
                     yolo_export.append({
-                        'dataset': s['dataset'],
-                        'mass_center': p['pos'],
-                        'mass_start': p['start'],
-                        'mass_end': p['end'],
-                        'identified_label': p['label']
+                        'dataset': s.dataset,
+                        'mass_center': p.pos,
+                        'mass_start': p.start,
+                        'mass_end': p.end,
+                        'identified_label': p.label
                     })
 
             if yolo_export:

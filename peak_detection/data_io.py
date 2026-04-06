@@ -3,6 +3,7 @@ import re
 import numpy as np
 import torch
 
+from .models import PeakRange
 from .utils import map01, simplify_label
 
 try:
@@ -49,11 +50,14 @@ def parse_rrng(filepath):
         if match:
             raw_label = match.group(4).strip()
             label = re.sub(r'Vol:[\d.]+', '', raw_label).strip()
-            ranges.append({
-                'start': float(match.group(2)),
-                'end': float(match.group(3)),
-                'label': simplify_label(label)
-            })
+            start = float(match.group(2))
+            end = float(match.group(3))
+            ranges.append(PeakRange(
+                start=start,
+                end=end,
+                pos=(start + end) / 2,
+                label=simplify_label(label)
+            ))
     return ranges
 
 
@@ -65,7 +69,7 @@ def extract_elements_from_rrng(rrng_file):
 
     truth = parse_rrng(rrng_file)
     for t in truth:
-        found = re.findall(r'([A-Z][a-z]?)', t['label'])
+        found = re.findall(r'([A-Z][a-z]?)', t.label)
         for f in found:
             elements.add(f)
     return sorted(list(elements))
@@ -91,24 +95,27 @@ def _species_to_rrng_notation(species):
 
 def _get_primary_species(r):
     """
-    Extract the primary species name from a range dict.
-    Uses detailed_id['el1'] if available, otherwise parses the label.
+    Extract the primary species name from a PeakRange.
+    Uses detailed_id.el1 if available, otherwise parses the label.
     Returns (species_str, is_unknown).
     """
-    label = r.get('label', 'Unknown')
-    detailed = r.get('detailed_id', {})
+    label = r.label or 'Unknown'
 
-    # Check for Unknown labels
-    unknown_match = re.match(r'Unknown\s*\((\w+)\)', label)
-    if unknown_match:
-        return unknown_match.group(1), True
+    # Use is_unknown flag if available
+    if r.is_unknown:
+        unknown_match = re.match(r'Unknown\s*\((\w+)\)', label)
+        if unknown_match:
+            return unknown_match.group(1), True
+        return 'Unknown', True
+
     if label == 'Unknown':
         return 'Unknown', True
 
     # Use detailed_id el1 if available (clean species name)
-    el1 = detailed.get('el1', '')
-    if el1 and el1 != 'Unknown':
-        return el1, False
+    if r.detailed_id is not None:
+        el1 = r.detailed_id.el1
+        if el1 and el1 != 'Unknown':
+            return el1, False
 
     # Fallback: parse the label string "Ti (0.84), Al (0.12)" -> "Ti"
     match = re.match(r'([A-Za-z]\w*)', label)
@@ -126,9 +133,9 @@ def save_rrng(filepath, detected_ranges, color_map=None):
     ----------
     filepath : str
         Output file path.
-    detected_ranges : list[dict]
-        Each dict has keys 'start' (float), 'end' (float), 'label' (str),
-        and optionally 'detailed_id' (dict with 'el1', 'conf1', 'el2', 'conf2').
+    detected_ranges : list[PeakRange]
+        Each PeakRange has start, end, label fields,
+        and optionally a DetailedId in detailed_id.
     color_map : dict, optional
         Mapping of {element: "RRGGBB"} hex color strings. If None, colors are omitted.
     """
@@ -167,8 +174,8 @@ def save_rrng(filepath, detected_ranges, color_map=None):
         f.write("[Ranges]\n")
         f.write(f"Number={len(detected_ranges)}\n")
         for i, (r, (rrng_str, is_unknown, species_label)) in enumerate(zip(detected_ranges, range_info), 1):
-            start = f"{r['start']:.5f}"
-            end = f"{r['end']:.5f}"
+            start = f"{r.start:.5f}"
+            end = f"{r.end:.5f}"
             color_part = ""
             if color_map is not None:
                 color = color_map.get(species_label, "FF0000")

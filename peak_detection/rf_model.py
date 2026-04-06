@@ -3,6 +3,8 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
+from .models import DetailedId
+
 
 def get_signature_features(target_mc, all_mc, all_counts, threshold=0.1):
     """
@@ -103,13 +105,15 @@ def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_dec
     peak_mcs = []
     peak_ints = []
     for p in detected_ranges:
-        mask = (x_exp >= p['start']) & (x_exp <= p['end'])
+        p_start = p.start if hasattr(p, 'start') else p['start']
+        p_end = p.end if hasattr(p, 'end') else p['end']
+        mask = (x_exp >= p_start) & (x_exp <= p_end)
         if np.any(mask):
             peak_idx = np.argmax(y_exp[mask])
             peak_mc = x_exp[mask][peak_idx]
             peak_int = y_exp[mask][peak_idx]
         else:
-            peak_mc = (p['start'] + p['end']) / 2
+            peak_mc = (p_start + p_end) / 2
             peak_int = 0.0
         peak_mcs.append(peak_mc)
         peak_ints.append(peak_int)
@@ -160,7 +164,7 @@ def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_dec
 
     for pred in preds:
         top_indices = pred.argsort()[-2:][::-1]
-        info = {'el1': '', 'conf1': 0.0, 'el2': '', 'conf2': 0.0}
+        info = DetailedId()
         results_str = []
         for i, idx in enumerate(top_indices):
             conf = float(pred[idx])
@@ -168,14 +172,14 @@ def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_dec
             raw_label = target_decoder[actual_class]
             clean_el = re.split('[:+]', str(raw_label))[0].strip()
             if i == 0:
-                info['el1'] = clean_el
-                info['conf1'] = conf
+                info.el1 = clean_el
+                info.conf1 = conf
                 results_str.append(f"{clean_el} ({conf:.2f})")
             elif conf >= 0.05:
-                info['el2'] = clean_el
-                info['conf2'] = conf
+                info.el2 = clean_el
+                info.conf2 = conf
                 results_str.append(f"{clean_el} ({conf:.2f})")
         elements.append(", ".join(results_str))
-        confs.append(info['conf1'])
+        confs.append(info.conf1)
         detailed_info.append(info)
     return elements, confs, detailed_info, peak_mcs

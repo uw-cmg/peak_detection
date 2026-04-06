@@ -46,9 +46,9 @@ def simplify_label(label):
 
 
 def calculate_iou(range1, range2):
-    """Calculates Intersection over Union for two range dicts with 'start'/'end' keys."""
-    s1, e1 = range1['start'], range1['end']
-    s2, e2 = range2['start'], range2['end']
+    """Calculates Intersection over Union for two PeakRange objects (or any object with .start/.end)."""
+    s1, e1 = range1.start, range1.end
+    s2, e2 = range2.start, range2.end
 
     inter_start = max(s1, s2)
     inter_end = min(e1, e2)
