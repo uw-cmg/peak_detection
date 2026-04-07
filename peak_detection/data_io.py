@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import numpy as np
@@ -37,7 +39,7 @@ def load_apt_from_file(apt_file):
     return x, spectrum, spectrum_log
 
 
-def parse_rrng(filepath):
+def parse_rrng(filepath: str) -> list[PeakRange]:
     """Parses a .RRNG file for benchmarking, including labels."""
     ranges = []
     if not os.path.exists(filepath):
@@ -93,7 +95,7 @@ def _species_to_rrng_notation(species):
     return " ".join(rrng_parts), elements
 
 
-def _get_primary_species(r):
+def _get_primary_species(r: PeakRange) -> tuple[str, bool]:
     """
     Extract the primary species name from a PeakRange.
     Uses detailed_id.el1 if available, otherwise parses the label.
@@ -125,7 +127,7 @@ def _get_primary_species(r):
     return label, False
 
 
-def save_rrng(filepath, detected_ranges, color_map=None):
+def save_rrng(filepath: str, detected_ranges: list[PeakRange], color_map: dict | None = None) -> None:
     """
     Write predicted ranges to a .rrng file.
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import csv
 import numpy as np
@@ -13,7 +15,7 @@ from .rf_model import create_RF_model, run_RF_model
 from .kde_model import KDECache, make_lookup_model, predict_lookup_model, suggest_unknown_candidates
 
 
-def remove_peaks_and_patch(spectrum, detected_ranges, window=10):
+def remove_peaks_and_patch(spectrum: np.ndarray, detected_ranges: list[PeakRange], window: int = 10) -> np.ndarray:
     """
     Replaces detected peak ranges with the average of surrounding noise.
     """
@@ -39,7 +41,7 @@ def remove_peaks_and_patch(spectrum, detected_ranges, window=10):
     return new_spectrum
 
 
-def identify_peaks(detected_ranges, x, spectrum_log, allowed_elements=None, flag_unknowns=True):
+def identify_peaks(detected_ranges: list[PeakRange], x: np.ndarray, spectrum_log, allowed_elements: list[str] | None = None, flag_unknowns: bool = True) -> list[PeakRange]:
     """
     Assigns chemical labels to detected ranges by matching them against
     theoretical isotopic 'fingerprints' (mass patterns and relative abundances).

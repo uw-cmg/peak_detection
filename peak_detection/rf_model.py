@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import re
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
-from .models import DetailedId
+from .models import DetailedId, PeakRange
 
 
 def get_signature_features(target_mc, all_mc, all_counts, threshold=0.1):
@@ -96,8 +98,8 @@ def create_RF_model(X, ions, n_estimators=25, random_state=42):
     return scaler, model, target_decoder
 
 
-def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_decoder,
-                 neighbor_threshold=2.0, use_signature=True):
+def run_RF_model(detected_ranges: list[PeakRange], x_exp: np.ndarray, spectrum_log, scaler, model, target_decoder,
+                 neighbor_threshold: float = 2.0, use_signature: bool = True) -> tuple[list[str], list[float], list[DetailedId], np.ndarray]:
     """Run trained RF model on detected ranges to classify peaks."""
     y_exp = spectrum_log.numpy() if hasattr(spectrum_log, 'numpy') else spectrum_log
 
@@ -105,15 +107,13 @@ def run_RF_model(detected_ranges, x_exp, spectrum_log, scaler, model, target_dec
     peak_mcs = []
     peak_ints = []
     for p in detected_ranges:
-        p_start = p.start if hasattr(p, 'start') else p['start']
-        p_end = p.end if hasattr(p, 'end') else p['end']
-        mask = (x_exp >= p_start) & (x_exp <= p_end)
+        mask = (x_exp >= p.start) & (x_exp <= p.end)
         if np.any(mask):
             peak_idx = np.argmax(y_exp[mask])
             peak_mc = x_exp[mask][peak_idx]
             peak_int = y_exp[mask][peak_idx]
         else:
-            peak_mc = (p_start + p_end) / 2
+            peak_mc = (p.start + p.end) / 2
             peak_int = 0.0
         peak_mcs.append(peak_mc)
         peak_ints.append(peak_int)
