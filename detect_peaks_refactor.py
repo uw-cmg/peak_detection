@@ -132,9 +132,9 @@ def process_dataset(
     # RF parameters
     training_path: str = None,
     include_molecules: bool = False,
-    use_neighborhood: bool = True,
+    use_neighborhood: bool = False,
     neighbor_threshold: float = 2.0,
-    use_signature: bool = True,
+    use_signature: bool = False,
     # Unknown flagging
     flag_unknowns: bool = True,
     kde_threshold: float = 0.25,
