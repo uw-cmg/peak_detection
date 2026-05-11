@@ -33,7 +33,10 @@ class Augmentation:
         """
         all_y = []
         all_ratio = []
-        d = apav.load_apt(self.apt_file)
+        try:
+            d = apav.load_apt(self.apt_file)
+        except:
+            d = apav.load_pos(self.apt_file)
         ratiolist = np.array(range(4, 10)) * 0.1
         slice_rois = []
 
