@@ -4,8 +4,32 @@ import numpy as np
 
 EXCLUDED_TRUTH_LABELS = {
     # Non-physical / placeholder RRNG entries that should never affect evaluation or plots
+    "Da133Na",
+    "Da13Na",
+    "Da15Na",
+    "Da18Na",
+    "Da19Na",
+    "Da20Na",
+    "Da22Na",
+    "Da27Na",
+    "Da29Na",
+    "Da2HuNa",
+    "Da34Na",
+    "Da35Na",
+    "Da36Na",
+    "Da37Na",
+    "Da38Na",
+    "Da39Na",
+    "Da40Na",
+    "Da41Na",
+    "Da46Na",
+    "Da47Na",
     "Da49Na",
+    "Da64Na",
+    "Da79Na",
     "DaHiNaNo",
+    "HuNa",
+    "HuNaPoSi",
 }
 
 

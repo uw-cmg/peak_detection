@@ -1,0 +1,18 @@
+Truth-coverage classifier training data
+num_files = 5000
+seed = 20260609
+output_dir = peak_detection/Ionclassifier/training_data/NewData_truthcoverage_lightmol1p_C3_BO_C2O_2p_2026-06-10/Data0001
+results_dir = results_summary_2026-06-09_context_top1_cleantruth_rerun
+existing_training_dir = peak_detection/Ionclassifier/training_data/NewData_peakshift0_noise0_newchg/Data0001
+truth_element_count = 76
+truth_molecule_count = 130
+molecule_formula_count_used_for_generation = 135
+molecule_label_policy = preserve truth-label spelling/order when available; canonical formulas used only for matching
+element_coverage_policy = include coverage compositions for every element present in *_true_species.txt
+element_charge_override = lanthanides La-Lu get 2+ and 3+ if missing
+molecule_charge_states = 1+, 2+, 3+, 4+ for all truth/current training molecule formulas
+light_molecule_charge1_only = True
+light_molecule_charge2_exceptions = BO, C2O, C3
+truth_elements_missing_after_generation = 0
+truth_molecules_missing_after_generation = 0
+light_molecule_charge1_only_canonical = AlH, AlH2, BO, BeH, BeH2, BeO, C2, C2O, C3, CN, CSi, H2, H2O, H2O2, H3, H3O, H5O2, HO, HO2, N2, O2

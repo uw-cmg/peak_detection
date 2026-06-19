@@ -52,6 +52,10 @@ def parse_rrng(filepath: str) -> list[PeakRange]:
         if match:
             raw_label = match.group(4).strip()
             label = re.sub(r'Vol:[\d.]+', '', raw_label).strip()
+            species_parts = re.findall(r'\b([A-Z][a-z]?):(\d+)\b', label)
+            if not species_parts:
+                continue
+            label = " ".join(f"{sym}:{count}" for sym, count in species_parts)
             start = float(match.group(2))
             end = float(match.group(3))
             label_simple = simplify_label(label)

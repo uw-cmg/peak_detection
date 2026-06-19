@@ -58,6 +58,22 @@ class DatasetStats:
     rf_elemental_correct_exc: int = 0
     rf_molecular_total_exc: int = 0
     rf_molecular_correct_exc: int = 0
+    # Optional: metrics before molecule-rescue overrides are applied
+    rf_species_total_before: int = 0
+    rf_species_correct_before: int = 0
+    rf_elemental_total_before: int = 0
+    rf_elemental_correct_before: int = 0
+    rf_molecular_total_before: int = 0
+    rf_molecular_correct_before: int = 0
+    rf_species_total_before_exc: int = 0
+    rf_species_correct_before_exc: int = 0
+    rf_elemental_total_before_exc: int = 0
+    rf_elemental_correct_before_exc: int = 0
+    rf_molecular_total_before_exc: int = 0
+    rf_molecular_correct_before_exc: int = 0
+    molecule_rescue_considered: int = 0
+    molecule_rescue_overrides: int = 0
+    molecule_rescue_mixed_candidates: int = 0
     unknown_count: int = 0
     unknown_count_with_truth: int = 0
     unknown_count_no_truth: int = 0
