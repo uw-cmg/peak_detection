@@ -74,6 +74,8 @@ def plot_yolo_comparison(stats, xlim=None, save_path=None, facecolor=None):
         return bool(re.search(r'\d', label)) or len(re.findall(r'[A-Z][a-z]?', label)) > 1
 
     def _predicted_plot_label(peak):
+        if getattr(peak, 'is_unknown', False) and getattr(peak, 'label', None):
+            return str(peak.label)
         det = getattr(peak, 'detailed_id', None)
         if det is None or not getattr(det, 'el1', None):
             return getattr(peak, 'label', '') or ''
@@ -185,6 +187,7 @@ def process_dataset(
     molecule_rf_rescue_margin: float = 0.15,
     molecule_rf_rescue_score_margin: float = 0.05,
     molecule_rf_rescue_dist_margin: float = 0.05,
+    unknown_mixed_element_molecule_confidence_threshold: float = 0.95,
     include_molecules: bool = False,
     use_neighborhood: bool = False,
     neighbor_threshold: float = 2.0,
@@ -264,6 +267,7 @@ def process_dataset(
         molecule_rf_rescue_margin=molecule_rf_rescue_margin,
         molecule_rf_rescue_score_margin=molecule_rf_rescue_score_margin,
         molecule_rf_rescue_dist_margin=molecule_rf_rescue_dist_margin,
+        unknown_mixed_element_molecule_confidence_threshold=unknown_mixed_element_molecule_confidence_threshold,
         yolo_weights=yolo_weights, iou=iou, conf=conf, max_det=max_det,
         iter_min_intensity_quantile=iter_min_intensity_quantile,
         iter_min_intensity_fraction=iter_min_intensity_fraction,
@@ -558,14 +562,14 @@ def process_dataset(
 
 def match_datasets(csv_dir, rrng_dir):
     """
-    Match APT/CSV files to RRNG files by filename.
+    Match APT/POS/CSV files to RRNG files by filename.
 
     The ALL_APT_processedCSV and ALL_RRNG_NEW folders are expected to have
     effectively the same basenames, although some exports include extra suffix
     text. Prefer the closest normalized filename match, then fall back to a
     shared run ID such as R6012_266034.
     """
-    csv_files = sorted(f for f in os.listdir(csv_dir) if f.lower().endswith(('.csv', '.apt')))
+    input_files = sorted(f for f in os.listdir(csv_dir) if f.lower().endswith(('.csv', '.apt', '.pos')))
     rrng_files = sorted(f for f in os.listdir(rrng_dir) if f.lower().endswith('.rrng'))
 
     def normalized_basename(filename):
@@ -586,8 +590,8 @@ def match_datasets(csv_dir, rrng_dir):
     ]
 
     matches = []
-    print(f"DEBUG: CSV files: {len(csv_files)}, RRNG files: {len(rrng_files)}")
-    for cf in csv_files:
+    print(f"DEBUG: APT/POS/CSV files: {len(input_files)}, RRNG files: {len(rrng_files)}")
+    for cf in input_files:
         c_norm = normalized_basename(cf)
         c_run_id = run_id(cf)
         candidates = []
@@ -1377,6 +1381,15 @@ def main():
     parser.add_argument("--molecule_rf_rescue_margin", type=float, default=0.15, help="Confidence margin for molecule rescue: above element by this amount overrides; within this amount may be stored as mixed top-2")
     parser.add_argument("--molecule_rf_rescue_score_margin", type=float, default=0.05, help="Quality-weighted score margin for molecule rescue overrides or mixed top-2 candidates")
     parser.add_argument("--molecule_rf_rescue_dist_margin", type=float, default=0.05, help="m/c distance tolerance for molecule rescue; strict improvements can override, close overlaps can become mixed top-2")
+    parser.add_argument(
+        "--unknown_mixed_element_molecule_confidence_threshold",
+        type=float,
+        default=0.95,
+        help=(
+            "Flag high-confidence mixed element+molecule top-2 assignments as Unknown when both "
+            "confidences are at least this value; set <=0 to disable"
+        ),
+    )
     parser.add_argument("--include_molecules", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--use_neighborhood", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--neighbor_threshold", type=float, default=2.0)
@@ -1495,6 +1508,7 @@ def main():
         'molecule_rf_rescue_margin': args.molecule_rf_rescue_margin,
         'molecule_rf_rescue_score_margin': args.molecule_rf_rescue_score_margin,
         'molecule_rf_rescue_dist_margin': args.molecule_rf_rescue_dist_margin,
+        'unknown_mixed_element_molecule_confidence_threshold': args.unknown_mixed_element_molecule_confidence_threshold,
         'include_molecules': args.include_molecules,
         'use_neighborhood': args.use_neighborhood,
         'neighbor_threshold': args.neighbor_threshold,

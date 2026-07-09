@@ -73,6 +73,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                              molecule_rf_rescue_margin: float = 0.15,
                              molecule_rf_rescue_score_margin: float = 0.05,
                              molecule_rf_rescue_dist_margin: float = 0.05,
+                             unknown_mixed_element_molecule_confidence_threshold: float = 0.95,
                              include_molecules=False, yolo_weights='best.pt',
                              iou=0.01, conf=0.05, max_det=2000,
                              iter_min_intensity_quantile: float = 0.10,
@@ -438,6 +439,48 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
             if det is not None and det.el2 and float(det.conf2) > 0:
                 parts.append(f"{det.el2} {float(det.conf2) * 100:.0f}%")
             return f"Unknown ({', '.join(parts)})" if parts else "Unknown"
+
+        def _format_mixed_element_molecule_unknown_label(det: DetailedId) -> str:
+            parts = [
+                f"{det.el1} {float(det.conf1) * 100:.0f}%",
+                f"{det.el2} {float(det.conf2) * 100:.0f}%",
+            ]
+            return f"Unknown ({' / '.join(parts)})"
+
+        def _flag_high_confidence_mixed_element_molecule_unknowns() -> int:
+            threshold = float(unknown_mixed_element_molecule_confidence_threshold or 0.0)
+            if not flag_unknowns or threshold <= 0:
+                return 0
+
+            flagged = 0
+            for p in formatted_results:
+                if getattr(p, 'is_unknown', False):
+                    continue
+                det = getattr(p, 'detailed_id', None)
+                if det is None or not det.el1 or not det.el2:
+                    continue
+                conf1 = float(getattr(det, 'conf1', 0.0) or 0.0)
+                conf2 = float(getattr(det, 'conf2', 0.0) or 0.0)
+                if conf1 < threshold or conf2 < threshold:
+                    continue
+
+                label1 = simplify_label(str(det.el1))
+                label2 = simplify_label(str(det.el2))
+                if not label1 or not label2 or label1 == 'Unknown' or label2 == 'Unknown':
+                    continue
+                mixed_element_molecule = (
+                    (_is_elemental_label(label1) and is_molecule(label2))
+                    or (_is_elemental_label(label2) and is_molecule(label1))
+                )
+                if not mixed_element_molecule:
+                    continue
+
+                p.label = _format_mixed_element_molecule_unknown_label(det)
+                p.id_score = max(conf1, conf2)
+                p.is_unknown = True
+                p.method = f"{p.method}+mixed-unknown" if p.method else "RF-mixed-unknown"
+                flagged += 1
+            return flagged
 
         # 2. Build empirical mc sample lookup (FOR MC-DISTANCE UNKNOWN FLAGGING)
         print("  Building mc-distance lookup table...")
@@ -1135,6 +1178,13 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
                 print(
                     f"  Molecule rescue considered {rescue_stats['considered']} candidates; no accepted rescues"
                 )
+        mixed_unknown_count = _flag_high_confidence_mixed_element_molecule_unknowns()
+        if mixed_unknown_count:
+            print(
+                "  High-confidence mixed element/molecule peaks flagged as Unknown: "
+                f"{mixed_unknown_count} "
+                f"(threshold={float(unknown_mixed_element_molecule_confidence_threshold):.2f})"
+            )
         after_rescue_breakdown = _compute_accuracy_counts(formatted_results)
 
         for p in formatted_results:
@@ -1191,6 +1241,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
             'true peak start': best_truth.start if best_iou > 0.1 else '',
             'true peak end': best_truth.end if best_iou > 0.1 else '',
             'true element label': best_truth.label if best_iou > 0.1 else 'Unknown',
+            'pred display label': p.label,
             'pred element label 1': det.el1, 'pred confidence 1': round(det.conf1, 3),
             'pred element label 2': det.el2, 'pred confidence 2': round(det.conf2, 3),
             'discarded': p.is_unknown
@@ -1199,7 +1250,7 @@ def predict_peak_ranges_yolo(apt_file, spectrum_log, x_exp, rrng_file,
 
     detailed_results_path = os.path.join(prefix_internal, f"{prefix_internal}_detailed_results.csv")
     with open(detailed_results_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['predicted peak start', 'predicted peak end', 'true peak start', 'true peak end', 'true element label', 'pred element label 1', 'pred confidence 1', 'pred element label 2', 'pred confidence 2', 'discarded'])
+        writer = csv.DictWriter(f, fieldnames=['predicted peak start', 'predicted peak end', 'true peak start', 'true peak end', 'true element label', 'pred display label', 'pred element label 1', 'pred confidence 1', 'pred element label 2', 'pred confidence 2', 'discarded'])
         writer.writeheader()
         writer.writerows(detailed_rows)
 

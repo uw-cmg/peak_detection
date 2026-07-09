@@ -16,10 +16,12 @@ except ImportError:
 
 def load_apt_from_file(apt_file):
     """
-    Load the .apt file (binary) or .csv file and get histogram.
+    Load a .apt/.pos binary file or processed .csv file and get histogram.
     Returns (x, spectrum, spectrum_log).
     """
-    if apt_file.lower().endswith('.csv'):
+    ext = os.path.splitext(apt_file)[1].lower()
+
+    if ext == '.csv':
         import pandas as pd
         print(f"Loading CSV: {apt_file}")
         df = pd.read_csv(apt_file)
@@ -29,11 +31,19 @@ def load_apt_from_file(apt_file):
         return x, spectrum, spectrum_log
 
     if apav is None:
-        print("Error: apav package not detected, cannot open .apt file")
+        print("Error: apav package not detected, cannot open .apt/.pos file")
         return None, None, None
-    else:
+    elif ext == '.apt':
+        print(f"Loading APT: {apt_file}")
         d = apav.load_apt(apt_file)
-        x, spectrum = d.mass_histogram(bin_width=0.01, lower=0, upper=307.2, multiplicity='all', norm=False)
+    elif ext == '.pos':
+        print(f"Loading POS: {apt_file}")
+        d = apav.load_pos(apt_file)
+    else:
+        print(f"Error: unsupported APT input extension '{ext}' for {apt_file}")
+        return None, None, None
+
+    x, spectrum = d.mass_histogram(bin_width=0.01, lower=0, upper=307.2, multiplicity='all', norm=False)
 
     spectrum_log = torch.tensor(map01(np.log(spectrum + 1)), dtype=torch.float32)
     return x, spectrum, spectrum_log
